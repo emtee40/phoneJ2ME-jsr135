@@ -224,15 +224,10 @@ public class DefaultConfiguration extends Configuration {
         // for converting
         mimeTypes.put("audio/tone", MIME_AUDIO_TONE);
 
-    // #ifdef ENABLE_JSR_234 [
+    // #ifdef ENABLE_AMMS [
         // for Image Access we need to init some environment values...
         //imageAccessor = (ImageAccess)createInstanceOf("com.sun.mmedia.ImageAccess");
         imageAccessor = new MIDPImageAccessor();
-
-        // Media Processors.
-        processors.put(MIME_IMAGE_RAW, "com.sun.amms.imageprocessor.ObjectImageProcessor");
-        processors.put(MIME_IMAGE_JPEG, "com.sun.amms.imageprocessor.StreamImageProcessor");
-        processors.put(MIME_IMAGE_PNG, "com.sun.amms.imageprocessor.StreamImageProcessor"); 
     // #endif ]
         
     }
@@ -571,7 +566,7 @@ public class DefaultConfiguration extends Configuration {
     // #endif ]
     }
 
-// #ifdef ENABLE_JSR_234 [
+// #ifdef ENABLE_AMMS [
     public String[] getSupportedMediaProcessorInputTypes() {
         return new String[] {MIME_IMAGE_PNG, MIME_IMAGE_JPEG, MIME_IMAGE_RAW};
     }
