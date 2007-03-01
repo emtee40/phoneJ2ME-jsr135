@@ -307,18 +307,6 @@ public class DirectPlayer extends BasicPlayer
     /**
      * Overrides from BasicPlayer
      */
-
-    // #ifdef RECORD [
-	protected void doReceiveRSL()
-	{
-		System.out.println( "[direct] received RSL" );
-		
-        if (recordControl != null) {
-            recordControl.recordSizeLimitReached();
-        }
-	}
-    // #endif ]
-	
     protected void doPostStart() {
         if (vc != null) {
             vc.setToThisPlayerLevel();     /* set to this player's volume level */
@@ -515,13 +503,12 @@ public class DirectPlayer extends BasicPlayer
      * @exception MediaException Thrown if the media time cannot be set.
      */
     protected long doSetMediaTime(long now) throws MediaException {
-        if (now <= 0) now = 0;
-        
-        long dur = doGetDuration();
-
-		if (TIME_UNKNOWN != dur && now > dur) now = dur;
-        
-        int ret = nSetMediaTime(hNative, now/1000);
+        if (now <= 0) {
+            now = 0;
+        } else {
+            now /= 1000;
+        }
+        int ret = nSetMediaTime(hNative, now);
         if (ret == -1) {
             throw new MediaException("media time cannot be set");
         }                
