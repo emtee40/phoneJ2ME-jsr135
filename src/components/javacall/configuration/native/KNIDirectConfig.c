@@ -23,42 +23,50 @@
  * information or have any questions. 
  */
 
-package com.sun.mmedia.protocol;
+#include <kni.h>
+//#include "midp_logging.h"
+//#include "midpEvents.h"
+//#include "midpMalloc.h"
+//#include "pcsl_print.h"
+#include "javacall_defs.h"
+#include "javacall_multimedia.h"
 
-import javax.microedition.media.Controllable;
-import javax.microedition.media.Control;
-import java.io.IOException;
+KNIEXPORT KNI_RETURNTYPE_BOOLEAN
+Java_com_sun_mmedia_DefaultConfiguration_nIsAmrSupported() {
+    int res = 0;
+    int i   = 0;
 
-abstract public class DataSource implements Controllable {
-    private String sourceLocator;
-    
-    public DataSource(String locator) {
-	sourceLocator = locator;
+    const javacall_media_caps* caps = javacall_media_get_caps();
+
+    while( NULL != caps[ i ].mimeType )
+    {
+        if( 0 == strcmp( caps[ i ].mimeType, JAVACALL_AUDIO_AMR_MIME ) )
+        {
+            res = 1;
+            break;
+        }
+        i++;
     }
 
-    public String getLocator() {
-	return sourceLocator;
+    KNI_ReturnBoolean( res ); 
+}
+
+KNIEXPORT KNI_RETURNTYPE_BOOLEAN
+Java_com_sun_mmedia_DefaultConfiguration_nIsJtsSupported() {
+    int res = 0;
+    int i   = 0;
+
+    const javacall_media_caps* caps = javacall_media_get_caps();
+
+    while( NULL != caps[ i ].mimeType )
+    {
+        if( 0 == strcmp( caps[ i ].mimeType, JAVACALL_AUDIO_TONE_MIME ) )
+        {
+            res = 1;
+            break;
+        }
+        i++;
     }
-    
-    public abstract String getContentType();
-    
-    public abstract void connect() throws IOException; 
 
-    public abstract void disconnect();
-
-    public abstract void start() throws IOException;
-
-    public abstract void stop() throws IOException;
-
-    public abstract SourceStream[] getStreams();
-
-    
-    // These two methods are declared here (Controllable interface)
-    // because of a feature in KVM/VM when code is compiled with JDK 1.4
-    // Need to declare these abstract
-
-    public abstract Control [] getControls();
-
-    public abstract Control getControl(String controlType);
-    
+    KNI_ReturnBoolean( res ); 
 }
