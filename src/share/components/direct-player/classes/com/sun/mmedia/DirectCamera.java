@@ -33,6 +33,7 @@ public class DirectCamera extends DirectVideo
      * It does not need data source
      */
     public DirectCamera() {
+        hasDataSource = false;
     }
 
     /**

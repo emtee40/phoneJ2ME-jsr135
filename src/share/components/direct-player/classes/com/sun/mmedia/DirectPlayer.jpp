@@ -42,6 +42,7 @@ import com.sun.j2me.log.LogChannels;
 
 import com.sun.mmedia.DefaultConfiguration;
 import com.sun.mmedia.DirectVolume;
+import com.sun.mmedia.PlayerStateSubscriber;
 import javax.microedition.media.Player;
 import javax.microedition.media.PlayerListener;
 import javax.microedition.media.MediaException;
@@ -71,15 +72,17 @@ public class DirectPlayer extends BasicPlayer
     protected final static boolean debug = false;
     // #endif ]    
 
+	public PlayerStateSubscriber state_subscriber = null;
+
     // Temp buffer shared by all of Player from the same isolate
     private static byte[] buffer;    
     
-    // #ifdef MIDI_CONTROL [
-    final static boolean SUPPORT_MIDI_CONTROL = true;
-    final static boolean SUPPORT_PITCH_CONTROL = true;
-    final static boolean SUPPORT_RATE_CONTROL = true;
-    final static boolean SUPPORT_TEMPO_CONTROL = true;
-    // #endif ]
+	// #ifdef MIDI_CONTROL [
+	final static boolean SUPPORT_MIDI_CONTROL = true;
+	final static boolean SUPPORT_PITCH_CONTROL = true;
+	final static boolean SUPPORT_RATE_CONTROL = true;
+	final static boolean SUPPORT_TEMPO_CONTROL = true;
+	// #endif ]
 
     // Package variables
     DirectVolume vc;
@@ -92,9 +95,9 @@ public class DirectPlayer extends BasicPlayer
     // #ifdef RECORD [
     private DirectRecord recordControl = null;
     // #endif ]
-    // #ifdef MIDI_CONTROL [
-    private DirectMIDIControl midiControl;
-    // #endif ]
+	// #ifdef MIDI_CONTROL [
+	private DirectMIDIControl midiControl;
+	// #endif ]
 
     // #ifdef ENABLE_MULTIPLE_ISOLATES [
     // Tunnel between media and MIDP
@@ -111,8 +114,6 @@ public class DirectPlayer extends BasicPlayer
     
     // Terminate native library
     protected native int nTerm(int handle);
-    // Get Content Type
-    protected native String nGetContentType(int handle);
     // Device is available?
     protected native boolean nAcquireDevice(int handle);
     // Relase device reference
@@ -150,6 +151,8 @@ public class DirectPlayer extends BasicPlayer
 
     // Start Prefetch of Native Player
     protected native void nPrefetch(int hNative);
+    // Provide whole media content size, if known
+    protected native void nSetWholeContentSize(int hNative, long contentSize);
     // Is Control supported by native or not
     protected static native boolean nIsFramePositioningControlSupported(int hNative);
     protected static native boolean nIsMetaDataControlSupported(int hNative);
@@ -268,7 +271,7 @@ public class DirectPlayer extends BasicPlayer
 
             long contentSize = stream.getContentLength();
             if (contentSize > 0) {
-                PlayerImpl.nSetWholeContentSize(hNative, contentSize);
+                nSetWholeContentSize(hNative, contentSize);
             }
 
             javaBufSize = PlayerImpl.nGetJavaBufferSize(hNative);
@@ -312,6 +315,9 @@ public class DirectPlayer extends BasicPlayer
         if (nPcmAudioPlayback(hNative)) {
             AudioTunnel.getInstance().start();
         }
+        
+		if( null != state_subscriber )
+			state_subscriber.PlayerPrefetched( this );
     }
 
     /**
@@ -319,16 +325,16 @@ public class DirectPlayer extends BasicPlayer
      */
 
     // #ifdef RECORD [
-    protected void doReceiveRSL()
-    {
-        System.out.println( "[direct] received RSL" );
-        
+	protected void doReceiveRSL()
+	{
+		System.out.println( "[direct] received RSL" );
+		
         if (recordControl != null) {
             recordControl.recordSizeLimitReached();
         }
-    }
+	}
     // #endif ]
-    
+	
     protected void doPostStart() {
         if (vc != null) {
             vc.setToThisPlayerLevel();     /* set to this player's volume level */
@@ -359,7 +365,7 @@ public class DirectPlayer extends BasicPlayer
             recordControl.playerStarted();
         }
         // #endif ]
-        
+		
         // #ifdef MIDI_CONTROL [
         if (midiControl != null) {
             midiControl.playerStarted();
@@ -521,7 +527,7 @@ public class DirectPlayer extends BasicPlayer
         
         long dur = doGetDuration();
 
-        if (TIME_UNKNOWN != dur && now > dur) now = dur;
+		if (TIME_UNKNOWN != dur && now > dur) now = dur;
         
         int ret = nSetMediaTime(hNative, now/1000);
         if (ret == -1) {
@@ -537,17 +543,22 @@ public class DirectPlayer extends BasicPlayer
      * @return the duration in microseconds or <code>TIME_UNKNOWN</code>
      */
     protected long doGetDuration() {
-        if (isCapturePlayer()) {
+        boolean has_capture_locator = ( null != locator ) &&
+            ( locator.startsWith( Configuration.AUDIO_CAPTURE_LOCATOR ) 
+                || locator.startsWith( Configuration.VIDEO_CAPTURE_LOCATOR ) );
+			  
+        if( has_capture_locator ) 
             return Player.TIME_UNKNOWN;
-        } else if (isDevicePlayer() && !hasToneSequenceSet) {
-            return 0;
-        } else {
-            int ret = nGetDuration(hNative);
-            if (ret != Player.TIME_UNKNOWN) {
-                return (ret * 1000);    
-            }
-            return ret;
+
+        // for MIDI_DEVICE_LOCATOR -- always 0
+		// for TONE_DEVICE_LOCATOR -- 0 if tone sequence wasn't set
+        if( !hasDataSource && !hasToneSequenceSet ) return 0; 
+        
+        int ret = nGetDuration(hNative);
+        if (ret != Player.TIME_UNKNOWN) {
+            return (ret * 1000);    
         }
+        return ret;
     }
     
     /**
@@ -660,7 +671,7 @@ public class DirectPlayer extends BasicPlayer
     private void processHeader(byte[] buffer, int length) {
         if (source != null) {
             // Additional check to differentiate sp-midi and midi
-            String mimeType = getContentType();
+            String mimeType = source.getContentType();
             BasicDS ds = (BasicDS)source;
             if ((ds != null) && mimeType.equals(Configuration.MIME_AUDIO_MIDI)) {
                 final int MAX_SP_MIDI_SEARCH = 512;
@@ -678,26 +689,6 @@ public class DirectPlayer extends BasicPlayer
                     }
             }
         }
-    }
-    
-    public String getContentType()
-    {
-        String ctype = super.getContentType();
-        
-        if( null == ctype ) {
-            ctype = nGetContentType(hNative);
-            if( null != ctype ) {
-                int s_pos = ctype.indexOf(' ');
-                if (-1 != s_pos) {
-                    ctype = ctype.substring(0, s_pos);
-                }
-            }
-            if (ctype == null && source != null) {
-                ctype = DefaultConfiguration.getContentType(source.getLocator());
-            }
-        }
-        
-        return ctype;
     }
     
     // #ifndef ABB [
@@ -722,18 +713,18 @@ public class DirectPlayer extends BasicPlayer
                               stop-time point.
                 */
 
-                long mt  = doGetMediaTime();
-                long dur = doGetDuration();
-                
-                while( mt < stopTime && mt < dur ) {
-                    try	{
-                        java.lang.Thread.sleep( 10 );
-                    } catch( InterruptedException e ) {
-                        // just skip it
-                    }
-                    
-                    mt = doGetMediaTime();
-                }
+				long mt  = doGetMediaTime();
+				long dur = doGetDuration();
+	            
+	            while( mt < stopTime && mt < dur ) {
+					try	{
+						java.lang.Thread.sleep( 10 );
+					} catch( InterruptedException e ) {
+						// just skip it
+					}
+					
+					mt = doGetMediaTime();
+				}
 
                 try {
                     doPreStop();

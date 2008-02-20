@@ -52,6 +52,7 @@ public final class DirectTone extends DirectPlayer {
      */
     public DirectTone() {
         super();
+        hasDataSource = false;
     }
 
     /**
@@ -157,7 +158,7 @@ public final class DirectTone extends DirectPlayer {
 
         long contentSize = sequence.length;
         if (contentSize > 0) {
-            PlayerImpl.nSetWholeContentSize(hNative, contentSize);
+            nSetWholeContentSize(hNative, contentSize);
         }
 
         PlayerImpl.nBuffering(hNative, sequence, sequence.length);

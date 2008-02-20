@@ -40,6 +40,7 @@ public final class DirectMIDI extends DirectPlayer {
      * It does not need data source
      */
     public DirectMIDI() {
+        hasDataSource = false;
     }
 
     protected Control doGetControl(String type) {

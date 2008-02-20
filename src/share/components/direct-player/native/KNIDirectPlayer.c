@@ -23,11 +23,11 @@
  * information or have any questions.
  */
 
+#include <string.h>
 #include "KNICommon.h"
 
 #include "jsrop_exceptions.h"
 #include "jsr135_sync.h"
-#include "javautil_string.h"
 
 /* Global Variables ************************************************************************/
 
@@ -504,6 +504,22 @@ UnlockAudioMutex();
     KNI_ReturnVoid();
 }
 
+/*  private native void nSetWholeContentSize(int hNative, long contentSize) */
+KNIEXPORT KNI_RETURNTYPE_VOID
+KNIDECL(com_sun_mmedia_DirectPlayer_nSetWholeContentSize) {
+    jint handle = KNI_GetParameterAsInt(1);
+    KNIPlayerInfo* pKniInfo = (KNIPlayerInfo*)handle;
+    long contentSize = (long)KNI_GetParameterAsLong(2);
+
+    if (pKniInfo && pKniInfo->pNativeHandle) {
+LockAudioMutex();
+        javacall_media_set_whole_content_size(pKniInfo->pNativeHandle,
+                                                contentSize);
+UnlockAudioMutex();            
+    }
+    KNI_ReturnVoid();
+}
+
 /*  protected native boolean nIsFramePositioningControlSupported ( int handle ) ; */
 KNIEXPORT KNI_RETURNTYPE_BOOLEAN
 KNIDECL(com_sun_mmedia_DirectPlayer_nIsFramePositioningControlSupported) {
@@ -722,43 +738,5 @@ KNIDECL(com_sun_mmedia_DirectPlayer_nIsVolumeControlSupported) {
     }
 
     KNI_ReturnBoolean(returnValue);
-}
-
-/*  protected native String nGetContentType(int handle); */
-KNIEXPORT KNI_RETURNTYPE_OBJECT
-KNIDECL(com_sun_mmedia_DirectPlayer_nGetContentType)
-{
-    jint handle = KNI_GetParameterAsInt(1);
-    KNIPlayerInfo* pKniInfo = (KNIPlayerInfo*)handle;
-    javacall_media_format_type mFormat = JAVACALL_MEDIA_FORMAT_UNKNOWN;
-
-    javacall_media_configuration *cfg;
-    javacall_media_caps *caps;
-
-    KNI_StartHandles(1);
-    KNI_DeclareHandle(stringObj);
-    KNI_ReleaseHandle(stringObj);
-
-    if (pKniInfo && pKniInfo->pNativeHandle) {
-        LockAudioMutex();            
-
-        if( JAVACALL_OK == javacall_media_get_format(pKniInfo->pNativeHandle, &mFormat) ) {
-            if( NULL != mFormat ) {
-                if( JAVACALL_OK == javacall_media_get_configuration(&cfg) ) {
-                    for( caps = cfg->mediaCaps; 
-                         caps != NULL && caps->mediaFormat != NULL;
-                         caps++ ) {
-                        if( javautil_string_equals( caps->mediaFormat, mFormat ) ) {
-                            const char* ct = caps->contentTypes;
-                            KNI_NewStringUTF(ct, stringObj);
-                        }
-                    }
-                }
-            }
-        }
-
-        UnlockAudioMutex();            
-    }
-    KNI_EndHandlesAndReturnObject(stringObj);
 }
 
