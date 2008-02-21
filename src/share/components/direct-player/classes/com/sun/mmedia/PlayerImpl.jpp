@@ -215,12 +215,8 @@ public class PlayerImpl implements Player {
             }
             return;
         }
-        String type = source.getContentType();
-        if (type == null && stream != null && stream.getContentDescriptor() != null) {
-            type = stream.getContentDescriptor().getContentType();
-        }
         /* realize native player */
-        nRealize(hNative, type);
+        nRealize(hNative, source.getContentType());
 
         if (mediaFormat.equals(BasicPlayer.MEDIA_FORMAT_UNKNOWN)) {
             /* ask media format if unknown */
