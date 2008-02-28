@@ -149,7 +149,7 @@ public class DirectPlayer extends BasicPlayer
     private native boolean nPcmAudioPlayback(int hNative);
 
     // Start Prefetch of Native Player
-    protected native boolean nPrefetch(int hNative);
+    protected native void nPrefetch(int hNative);
     // Is Control supported by native or not
     protected static native boolean nIsFramePositioningControlSupported(int hNative);
     protected static native boolean nIsMetaDataControlSupported(int hNative);
@@ -258,18 +258,14 @@ public class DirectPlayer extends BasicPlayer
         if (debug) System.out.println("[direct] DirectPlayer.doPrefetch for " + hNative + " " + mediaFormat);
 
         /* prefetch native player */
-        if (!nPrefetch(hNative)) {
-            throw new MediaException("Can not prefetch");
-        }
+        nPrefetch(hNative);
 
         if (!handledByDevice) {
             /* predownload media data to fill native buffers */
             PlayerImpl.doBuffering(hNative, stream);
         }
 
-        if(!nAcquireDevice(hNative)) {
-            throw new MediaException("Can not acquire device");
-        }
+        nAcquireDevice(hNative);
 
         if (nPcmAudioPlayback(hNative)) {
             AudioTunnel.getInstance().start();
