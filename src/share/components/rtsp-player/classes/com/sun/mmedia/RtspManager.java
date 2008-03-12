@@ -65,13 +65,10 @@ public class RtspManager {
     private int videoWidth;
     private int videoHeight;
 
-    private Random rnd = new Random(System.currentTimeMillis());
-
     /**
-     * Highest and lowest port values allowed for RTP port pairs.
+     * Highest port value allowed for RTP port pairs.
      */
-    private final int MIN_PORT =  1024; // inclusive
-    private final int MAX_PORT = 65536; // exclusive
+    private final int MAX_PORT = 65535;
 
     
     private boolean responseReceived;
@@ -95,7 +92,7 @@ public class RtspManager {
 
         listeners = new Vector();
 
-        sequenceNumber = rnd.nextInt();
+        sequenceNumber = new Random().nextInt();
 
         userAgent = "User-Agent: MMAPI RTSP Player Version 1.0 Personal Profile";
     }
@@ -953,16 +950,20 @@ public class RtspManager {
 
         int port = -1;
 
+        Random random = new Random();
+
         while (!found) {
+            do {
+                port = random.nextInt();
 
-            // generate random in [MIN_PORT..MAX_PORT[ range
-            port = ( rnd.nextInt( MAX_PORT - MIN_PORT ) + MIN_PORT );
+                if (port % 2 != 0) {
+                    port++;
+                }
+            } while (port < 1024 || (port > MAX_PORT - 1));
 
-            // port number must be even
-            port &= 0xFFFFFFFE;
-
-            // IMPL_NOTE: needs to test if the client can actually bind to
+            // needs to test if the client can actually bind to
             // these port....
+
             found = true;
         }
 

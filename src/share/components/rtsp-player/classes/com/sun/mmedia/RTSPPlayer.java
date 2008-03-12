@@ -86,7 +86,7 @@ public class RTSPPlayer extends com.sun.mmedia.BasicPlayer {
         // media time set, so we patch event data with correct 
         // value here
 
-        if ( evt.equals( PlayerListener.END_OF_MEDIA ))
+        if (PlayerListener.END_OF_MEDIA == evt)
             super.sendEvent(evt, new Long(doGetMediaTime()));
         else
             super.sendEvent(evt, evtData);

@@ -34,7 +34,7 @@ public class StatusLine extends Parser {
         ByteArrayInputStream bin =
                 new ByteArrayInputStream(input.getBytes());
 
-        protocol = getToken(bin);
+        String protocol = getToken(bin);
 
         // System.out.println("protocol : " + protocol);
 
@@ -53,9 +53,5 @@ public class StatusLine extends Parser {
 
     public int getCode() {
         return code;
-    }
-
-    public String getProtocol() {
-        return protocol;
     }
 }

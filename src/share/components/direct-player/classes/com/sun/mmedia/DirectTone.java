@@ -82,6 +82,7 @@ public final class DirectTone extends DirectPlayer {
                     seqs = baos.toByteArray();
                     baos.close();
                     tmpseqs = null;
+                    System.gc();
 
                     try {
                         ToneControl t = new DirectToneControl(this, false);
@@ -193,8 +194,8 @@ public final class DirectTone extends DirectPlayer {
 
         private boolean checkSequence( byte[] seq )
         {
-            byte note;
-            byte blk = -1;
+            int note;
+            int blk = -1;
             
             if( seq.length < 4 )
                 return false;
@@ -217,7 +218,7 @@ public final class DirectTone extends DirectPlayer {
                     case ToneControl.TEMPO:
                         if (stage != 0)
                             return false; // only after version
-                        if (seq[pos] < 5)
+                        if (seq[pos] < 5 || seq[pos] > 127)
                             return false;
                         pos++;
                         stage = 1;
@@ -225,7 +226,7 @@ public final class DirectTone extends DirectPlayer {
                     case ToneControl.RESOLUTION:
                         if (stage > 1)
                             return false; // only after version and tempo
-                        if (seq[pos] < 1)
+                        if (seq[pos] < 1 || seq[pos] > 127)
                             return false;
                         pos++;
                         stage = 2;
@@ -234,7 +235,7 @@ public final class DirectTone extends DirectPlayer {
                         if (stage > 2)
                             return false;
                         blk = seq[pos++];
-                        if (blk < 0)
+                        if (blk < 0 || blk > 127)
                             return false;
                         stage = 3;
                         break;
@@ -250,7 +251,7 @@ public final class DirectTone extends DirectPlayer {
                         stage = 3;
                         break;
                     case ToneControl.PLAY_BLOCK:
-                        if (seq[pos] < 0)
+                        if (seq[pos] < 0 || seq[pos] > 127)
                             return false;
                         if (!blk_defined[seq[pos]])
                             return false;
@@ -264,13 +265,13 @@ public final class DirectTone extends DirectPlayer {
                         stage = (blk == -1) ? 5 : 4;
                         break;
                     case ToneControl.REPEAT:
-                        if (seq[pos] < 2)
+                        if (seq[pos] < 2 || seq[pos] > 127)
                             return false;
                         pos++;
                         stage = (blk == -1) ? 5 : 4;
                         break;
                     case ToneControl.SILENCE:
-                        if (seq[pos] < 1)
+                        if (seq[pos] < 1 || seq[pos] > 127)
                             return false;
                         pos++;
                         stage = (blk == -1) ? 5 : 4;
@@ -278,21 +279,21 @@ public final class DirectTone extends DirectPlayer {
                     case DualToneControl.DUALTONE:
                         if (!dualTone)
                             return false;
-                        if (seq[pos] < 0)
+                        if (seq[pos] < 0 || seq[pos] > 127)
                             return false;
                         pos++;
-                        if (seq[pos] < 0)
+                        if (seq[pos] < 0 || seq[pos] > 127)
                             return false;
                         pos++;
-                        if (seq[pos] < 0)
+                        if (seq[pos] < 0 || seq[pos] > 127)
                             return false;
                         pos++;
                         stage = (blk == -1) ? 5 : 4;
                         break;
                     default: // note
-                        if (note < 0)
+                        if (note < 0 || note > 127)
                             return false;
-                        if (seq[pos] < 1)
+                        if (seq[pos] < 1 || seq[pos] > 127)
                             return false;
                         pos++;
                         stage = (blk == -1) ? 5 : 4;
