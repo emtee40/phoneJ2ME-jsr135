@@ -57,7 +57,7 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
     private final int SCREEN_HEIGHT = 240;//nGetScreenHeight();
     private final int DEFAULT_WIDTH = 80;
     private final int DEFAULT_HEIGHT = 80;
-    private final int COLOR_KEY = 0x010101;
+    private final int ALPHA_COLOR = 1;
 
     // NOTE: You have to calibrate this value carefully
     //       If you increase this value, fake preview quality goes down but, system overhead decrease
@@ -199,19 +199,19 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
                 "prepareVideoSurface " + x + "," + y + "," + w + "," + h); 
         }    
  
-        // Turn off color key
-        source.setColorKey( false, COLOR_KEY);
+        // Turn off alpha channel
+        source.setVideoAlpha( false, ALPHA_COLOR);
         setTranslatedVideoLocation(g, x, y, w, h);
 
         source.setVideoVisible( !hidden);
     }
 
     /**
-     * Prepare clipped preview region by using color key masking
+     * Prepare clipped preview region by using alpha channel masking
      */
     private void prepareClippedPreview(Graphics g, int x, int y, int w, int h) {
-        if (source.setColorKey( true, COLOR_KEY)) {
-            g.setColor(COLOR_KEY);    // IMPL NOTE - Consider RGB565 conversion
+        if (1 == source.setVideoAlpha( true, ALPHA_COLOR)) {
+            g.setColor(0, 0, 8);    // IMPL NOTE - Consider RGB565 conversion
             g.fillRect(x, y, w, h);
             setTranslatedVideoLocation(g, x, y, w, h);
             source.setVideoVisible( !hidden);
@@ -523,7 +523,7 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
      */
     public void paintVideo(Graphics g) {
         int x, y, w, h;
-
+        
         synchronized(boundLock) {
             x = dx;
             y = dy;
@@ -539,16 +539,11 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
         if (canvas != null && !canvas.isShown()) {
             hidden = true;
         }
-        if (!hidden) {
-            boolean isOverlapped = false;
-            if (mmh != null) {
-                isOverlapped = mmh.isDisplayOverlapped(g);
-            }
-            if (isOverlapped) {
-                prepareClippedPreview(g, x, y, w, h);
-            } else if (visible && started) {
-                prepareVideoSurface(g, x, y, w, h);
-            }
+
+        if (hidden) {
+            prepareClippedPreview(g, x, y, w, h);
+        } else if (visible && started) {
+            prepareVideoSurface(g, x, y, w, h);
         }
     }
 
@@ -562,6 +557,7 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
         }
         source.setVideoVisible( false);
         hidden = true;
+        source.setVideoAlpha( true, ALPHA_COLOR);
         repaint();
     }
 
@@ -585,11 +581,8 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
      */
     class DVItem extends CustomItem {
 
-       private MMHelper mmh = null;
-
         DVItem(String label) {
             super(label);
-            mmh = MMHelper.getMMHelper();
         }
         
         void forcePaint() {
@@ -601,15 +594,18 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
                 Logging.report(Logging.INFORMATION, LogChannels.LC_MMAPI, 
                     "DVItem.paint visible=" + visible); 
             }
-            if (!hidden) {
-                boolean isOverlapped = false;
-                if (mmh != null) {
-                    isOverlapped = mmh.isDisplayOverlapped(g);
-                }
-                if (isOverlapped) {
-                    prepareClippedPreview(g, 0, 0, w, h);
-                } else if (visible) {
+
+            // Is in hidden state, then just draw fake preview
+            if (hidden) {
+                prepareClippedPreview(g, 0, 0, w, h);
+            // Is out of hidden state, then check about clipping regions and
+            // determind what to show
+            } else if (visible) {
+                if (true == isInClippingArea(g, 0, 0, w, h)) {
+                    // Prepare video preview
                     prepareVideoSurface(g, 0, 0, w, h);
+                } else {
+                    prepareClippedPreview(g, 0, 0, w, h);
                 }
             }
         }
@@ -654,7 +650,6 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
             if (debug) {
                 Logging.report(Logging.INFORMATION, LogChannels.LC_MMAPI, "hideNotify"); 
             }        
-            source.setVideoVisible( false);
             hidden = true;
             repaint();
         }
