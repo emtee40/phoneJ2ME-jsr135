@@ -1,6 +1,6 @@
 /*
  * 
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -32,31 +32,26 @@
  *********************************************************/
 
 /*  private native int nPlayTone ( int appId, int note , int dur , int vol ) ; */
-KNIEXPORT KNI_RETURNTYPE_INT
+KNIEXPORT KNI_RETURNTYPE_BOOLEAN
 KNIDECL(com_sun_mmedia_NativeTonePlayer_nPlayTone) {
     jint appId = KNI_GetParameterAsInt(1);
     jint note = KNI_GetParameterAsInt(2);
     jint dur = KNI_GetParameterAsInt(3);
     jint vol = KNI_GetParameterAsInt(4);
-    jint returnValue = 1;
-    javacall_result res = JAVACALL_FAIL;
+    jboolean returnValue = KNI_TRUE;
 
-    res = javacall_media_play_tone(appId, note, dur, vol);
-    
-    if( JAVACALL_OK == res )
-    {
-        returnValue = 0;
+    if (vol < 0) {
+        vol = 0;
+    } else if (vol > 100) {
+        vol = 100;
     }
-    else if( JAVACALL_NO_AUDIO_DEVICE == res )
-    {
-        returnValue = 2;
+
+    if (note >= 0 && note <= 127) {
+        if (JAVACALL_FAIL == javacall_media_play_tone(appId, note, dur, vol)) {
+            returnValue = KNI_FALSE;
+        }
     }
-    else
-    {
-        returnValue = 1;
-    }
-    
-    KNI_ReturnInt(returnValue);
+    KNI_ReturnBoolean(returnValue);
 }
 
 /*  private native int nStopTone ( int appId) ; */

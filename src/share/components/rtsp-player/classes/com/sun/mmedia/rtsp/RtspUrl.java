@@ -36,9 +36,6 @@ public class RtspUrl {
      */
     private String url;
 
-    public String toString() {
-        return url;
-    }
 
     /**
      * Constructor for the RtspUrl object

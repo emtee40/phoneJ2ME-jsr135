@@ -26,36 +26,33 @@ package com.sun.mmedia.rtsp;
 
 import javax.microedition.media.protocol.SourceStream;
 import javax.microedition.media.protocol.ContentDescriptor;
-import javax.microedition.media.Player;
 import javax.microedition.media.Control;
 
 public class RtspSS implements SourceStream {
 
-    private ContentDescriptor cdescr;
-    private Depacketizer depacketizer;
-    private RtspDS ds;
+    private RtpConnection conn;
+    private RtpPacket cur_pkt = null;
+    public ContentDescriptor cdescr;
 
-    public RtspSS(RtspDS ds) {
-        depacketizer = null;
-        this.ds = ds;
+    public RtspSS(RtpConnection conn) {
+        this.conn = conn;
+        conn.setSS(this);
     }
 
-    public void setContentDescriptor(String descr) {
+    void setContentDescriptor(String descr) {
+        cdescr = new ContentDescriptor(descr);
+        //System.out.println("**** MIME:" + cdescr.getContentType());
+    }
 
-        String d = descr;
-
-        if (Player.TIME_UNKNOWN != ds.getDuration()) {
-            d = descr + "; duration=" + ds.getDuration() / 1000; // mks ==> ms
-        }
-
-        cdescr = new ContentDescriptor(d);
-
-        String d_upr = descr.toUpperCase();
-
-        if (d_upr.startsWith("AUDIO/X-MP3-DRAFT-00")) {
-            depacketizer = new AduqDepacketizer();
-        } else {
-            depacketizer = new DefaultDepacketizer();
+    void packetArrived(RtpPacket pkt) {
+        if (null == cdescr) {
+            RtpPayloadType pt = RtpPayloadType.get(pkt.getPayloadType());
+            if (null != pt) {
+                setContentDescriptor(pt.getDescr());
+            } else {
+                // unsupported content type
+                // conn.stopListening();
+            }
         }
     }
 
@@ -77,8 +74,22 @@ public class RtspSS implements SourceStream {
         return -1;
     }
 
-    public int read(byte[] b, int off, int len) throws java.io.IOException {
-        return depacketizer.read(b, off, len);
+    public int read(byte[] b, int off, int len)
+        throws java.io.IOException {
+
+        if (null == cur_pkt || 0 == cur_pkt.getPayloadSize()) {
+            try {
+                cur_pkt = conn.dequeuePacket();
+            } catch (InterruptedException e) {
+                return -1;
+            }
+        }
+
+        if (null == cur_pkt || 0 == cur_pkt.getPayloadSize()) return -1;
+
+        int bytes_moved = cur_pkt.getPayload(b, off, len);
+
+        return bytes_moved;
     }
 
     public long seek(long where) 
@@ -98,21 +109,5 @@ public class RtspSS implements SourceStream {
 
     public Control[] getControls() {
         return new Control[] { null };
-    }
-
-    // ===================== RTP packet queue =================
-
-    public boolean processPacket(RtpPacket pkt) {
-
-        if (null == cdescr) {
-            RtpPayloadType pt = RtpPayloadType.get(pkt.payloadType());
-            if (null != pt) {
-                setContentDescriptor(pt.getDescr());
-            } else {
-                // unsupported content type
-                depacketizer = null;
-            }
-        }
-        return (null != depacketizer) && depacketizer.processPacket(pkt);
     }
 }

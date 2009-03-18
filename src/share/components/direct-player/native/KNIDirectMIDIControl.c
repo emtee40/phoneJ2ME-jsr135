@@ -1,6 +1,6 @@
 /*
  * 
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -184,17 +184,10 @@ KNIDECL(com_sun_mmedia_DirectMIDIControl_nSetRate) {
     jint rate = KNI_GetParameterAsInt(2);
     KNIPlayerInfo* pKniInfo = (KNIPlayerInfo*)handle;
     jint returnValue = 0;
-    javacall_result result;
 
     if (pKniInfo && pKniInfo->pNativeHandle) {
-        long realRate = 0;
-        JAVACALL_MM_ASYNC_EXEC(
-            result,
-            javacall_media_set_rate(pKniInfo->pNativeHandle, (long)rate),
-            pKniInfo->pNativeHandle, pKniInfo->appId, pKniInfo->playerId, JAVACALL_EVENT_MEDIA_RATE_SET,
-            returns_no_data
-        );
-        if (result == JAVACALL_OK) {
+        if (JAVACALL_SUCCEEDED(javacall_media_set_rate(pKniInfo->pNativeHandle, (long)rate))) {
+            long realRate = 0;
             if (JAVACALL_SUCCEEDED(javacall_media_get_rate(pKniInfo->pNativeHandle, &realRate))) {
                 returnValue = (jint)realRate;
             }
@@ -268,17 +261,10 @@ KNIDECL(com_sun_mmedia_DirectMIDIControl_nSetPitch) {
     jint pitch = KNI_GetParameterAsInt(2);
     KNIPlayerInfo* pKniInfo = (KNIPlayerInfo*)handle;
     jint returnValue = 0;
-    javacall_result result;
 
     if (pKniInfo && pKniInfo->pNativeHandle) {
-        long realPitch = 0;
-        JAVACALL_MM_ASYNC_EXEC(
-            result,
-            javacall_media_set_pitch(pKniInfo->pNativeHandle, (long)pitch),
-            pKniInfo->pNativeHandle, pKniInfo->appId, pKniInfo->playerId, JAVACALL_EVENT_MEDIA_PITCH_SET,
-            returns_no_data
-        );
-        if (result == JAVACALL_OK) {
+        if (JAVACALL_SUCCEEDED(javacall_media_set_pitch(pKniInfo->pNativeHandle, (long)pitch))) {
+            long realPitch = 0;
             if (JAVACALL_SUCCEEDED(javacall_media_get_pitch(pKniInfo->pNativeHandle, &realPitch))) {
                 returnValue = (jint)realPitch;
             }
@@ -334,17 +320,10 @@ KNIDECL(com_sun_mmedia_DirectMIDIControl_nSetTempo) {
     jint tempo = KNI_GetParameterAsInt(2);
     KNIPlayerInfo* pKniInfo = (KNIPlayerInfo*)handle;
     jint returnValue = 0;
-    javacall_result result;
 
     if (pKniInfo && pKniInfo->pNativeHandle) {
-        long realTempo = 0;
-        JAVACALL_MM_ASYNC_EXEC(
-            result,
-            javacall_media_set_tempo(pKniInfo->pNativeHandle, (long)tempo),
-            pKniInfo->pNativeHandle, pKniInfo->appId, pKniInfo->playerId, JAVACALL_EVENT_MEDIA_TEMPO_SET,
-            returns_no_data
-        );
-        if (result == JAVACALL_OK) {
+        if (JAVACALL_SUCCEEDED(javacall_media_set_tempo(pKniInfo->pNativeHandle, (long)tempo))) {
+            long realTempo = 0;
             if (JAVACALL_SUCCEEDED(javacall_media_get_tempo(pKniInfo->pNativeHandle, &realTempo))) {
                 returnValue = (jint)realTempo;
             }

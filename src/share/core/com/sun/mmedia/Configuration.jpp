@@ -1,5 +1,5 @@
 /*
- *  Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ *  Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  *  DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  *  
  *  This program is free software; you can redistribute it and/or
@@ -25,9 +25,6 @@ package com.sun.mmedia;
 
 import java.util.Hashtable;
 import javax.microedition.media.Control;
-// #ifdef ENABLE_CDC [
-import java.security.*;
-// #endif ]
 
 /**
  *  The configuration module for MMAPI.
@@ -294,18 +291,8 @@ public abstract class Configuration {
     public static Configuration getConfiguration() {
         if (config != null) return config;
     
-        String className = 
-// #ifdef ENABLE_CDC [
-            (String) AccessController.doPrivileged(new PrivilegedAction() {
-                    public Object run() {
-                        return
-// #endif ]
-            System.getProperty("mmapi-configuration");
-// #ifdef ENABLE_CDC [
-                    }
-                });
-// #endif ]
-
+        String className = System.getProperty("mmapi-configuration");
+        
         if (className != null) {        
             try {
                 // ... try and instantiate the configuration class ...

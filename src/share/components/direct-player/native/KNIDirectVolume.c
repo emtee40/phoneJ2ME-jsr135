@@ -1,6 +1,6 @@
 /*
  * 
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -59,12 +59,7 @@ KNIDECL(com_sun_mmedia_DirectVolume_nSetVolume) {
     MMP_DEBUG_STR("[kni_volume] +nSetVolume\n");
 
     if (pKniInfo && pKniInfo->pNativeHandle) {
-        JAVACALL_MM_ASYNC_EXEC(
-            ret,
-            javacall_media_set_volume(pKniInfo->pNativeHandle, &level),
-            pKniInfo->pNativeHandle, pKniInfo->appId, pKniInfo->playerId, JAVACALL_EVENT_MEDIA_VOLUME_SET,
-            returns_no_data
-        );
+        ret = javacall_media_set_volume(pKniInfo->pNativeHandle, &level);
     } else {
         MMP_DEBUG_STR("[nSetVolume] Invalid native handle");
     }

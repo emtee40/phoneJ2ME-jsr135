@@ -1,5 +1,5 @@
 /*
- *  Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
+ *  Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  *  DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  *  
  *  This program is free software; you can redistribute it and/or
@@ -47,11 +47,8 @@ public final class PermissionAccessor {
 
     public static final int PERMISSION_HTTPS_READ = 9;
     public static final int PERMISSION_HTTPS_WRITE = 10;
-
-    public static final int PERMISSION_RTSP_READ = 11;
-    public static final int PERMISSION_RTSP_WRITE = 12;
-
-    private static final String mapPermissions[] = {
+    
+    private static final String mapPermissions [] = {
         /* PERMISSION_SYSTEM                        */ null,
                 
         /* PERMISSION_HTTP_READ                     */ null,
@@ -66,9 +63,6 @@ public final class PermissionAccessor {
 
         /* PERMISSION_HTTPS_READ                    */ null,
         /* PERMISSION_HTTPS_WRITE                   */ null,
-
-        /* PERMISSION_RTSP_READ                     */ null,
-        /* PERMISSION_RTSP_WRITE                    */ null
     };
     
     /**
@@ -111,8 +105,7 @@ public final class PermissionAccessor {
         "device://",
         "file://",
         "http://",
-        "https://",
-        "rtsp://"
+        "https://"
     };
     
     // inidicates that corresponding locator type needs no special permissions.
@@ -127,8 +120,7 @@ public final class PermissionAccessor {
         /* "device://"       */ NEED_NO_PERMISSIONS,
         /* "file://"         */ PERMISSION_FILE_READ,
         /* "http://"         */ PERMISSION_HTTP_READ,
-        /* "https://"        */ PERMISSION_HTTPS_READ,
-        /* "rtsp://"         */ PERMISSION_RTSP_READ
+        /* "https://"        */ PERMISSION_HTTPS_READ
     };
     
     /**

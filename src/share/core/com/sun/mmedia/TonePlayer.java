@@ -1,5 +1,5 @@
 /*
- *  Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ *  Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  *  DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  *  
  *  This program is free software; you can redistribute it and/or
@@ -31,11 +31,6 @@ import javax.microedition.media.MediaException;
  * @created    January 31, 2005
  */
 public interface TonePlayer {
-    
-    public static final int RESULT_OK = 0;
-    public static final int RESULT_FAIL = 1;
-    public static final int RESULT_NO_AUDIO_DEVICE = 2;
-    
     /**
      * Plays a note of specified duration and volume
      *
@@ -43,7 +38,8 @@ public interface TonePlayer {
      * @param  duration  The duration of the tone in milli-seconds.
      * @param  volume    Audio volume range from 0 to 100.
      */
-    int playTone(int note, int duration, int volume);
+    void playTone(int note, int duration, int volume)
+        throws MediaException;
 
     /**
      * Stop current tone playing

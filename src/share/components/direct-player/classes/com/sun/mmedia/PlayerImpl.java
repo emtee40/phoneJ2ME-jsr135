@@ -1,6 +1,6 @@
 /*
  * 
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -92,8 +92,7 @@ public class PlayerImpl implements Player {
     private static Object idLock = new Object();
     
     // Init native library
-    protected native int nInit(int appId, int pID, String URI)
-                                            throws MediaException, IOException;
+    protected native int nInit(int appId, int pID, String URI);
     // Terminate native library
     protected native int nTerm(int handle);
     // Get Media Format
@@ -102,8 +101,7 @@ public class PlayerImpl implements Player {
     protected native boolean nIsHandledByDevice(int handle);
 
     // Realize native player
-    protected native void nRealize(int handle, String mime) throws
-            MediaException;
+    protected native boolean nRealize(int handle, String mime);
 
     private static String PL_ERR_SH = "Cannot create a Player: ";
     
@@ -123,6 +121,12 @@ public class PlayerImpl implements Player {
 
         String locator = source.getLocator();
         hNative = nInit(appId, pID, locator);
+
+        if (0 == hNative) {
+            throw new MediaException("Unable to create native player");
+        } else if (-1 == hNative) {
+            throw new IOException("Unable to create native player");
+        }
 
         mediaFormat     = nGetMediaFormat(hNative);
 
@@ -221,7 +225,9 @@ public class PlayerImpl implements Player {
             type = stream.getContentDescriptor().getContentType();
         }
         /* try to realize native player */
-        nRealize(hNative, type);
+        if (!nRealize(hNative, type)) {
+            throw new MediaException("Can not realize");
+        }
 
         MediaDownload mediaDownload = null;
 
@@ -237,7 +243,7 @@ public class PlayerImpl implements Player {
                     mediaFormat = format;
                     handledByJava = true;
                 } else {
-                    throw new MediaException("Unsupported media format ('" + type + "','" + mediaFormat + "')");
+                    throw new MediaException("Unsupported media format");
                 }
             }
             /* predownload media data to recognize media format and/or 
@@ -682,14 +688,11 @@ public class PlayerImpl implements Player {
         if (isClosed) {
             throw new IllegalStateException();
         }
-
-        long dur = Player.TIME_UNKNOWN;
-
-        if (null!=playerInst) {
-            dur = playerInst.getDuration();
+        if (playerInst != null) {
+            return playerInst.getDuration();
+        } else {
+            return Player.TIME_UNKNOWN;
         }
-
-        return dur;
     };
 
     /**
