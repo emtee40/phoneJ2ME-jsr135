@@ -40,31 +40,22 @@ public class DirectVolume implements VolumeControl {
     protected native int nSetVolume(int hNative, int level);
     protected native boolean nIsMuted(int hNative);
     protected native boolean nSetMute(int hNative, boolean mute);
-    protected native int nGetSystemVolume();
 
-    private int _level = 100;
+    private int _level = -1;
     private int _mute = -1;
     private int _hNative;
     private HighLevelPlayer _player;
-    private int _systemLevel = -1;
 
     DirectVolume(HighLevelPlayer player, int hNative) {
         _player = player;
         _hNative = hNative;
-        if (_hNative != 0) {
-            _systemLevel = nGetSystemVolume();
-        }
     }
     
     void setToThisPlayerLevel() {
-        if (_level == -1 || _hNative == 0) {
+        if (_level == -1)
             return;
-        }
-        int newLevel = _level;
-        if (_systemLevel != -1) {
-            newLevel = newLevel * _systemLevel / 100;
-        }
-        nSetVolume(_hNative, newLevel);
+        if (_hNative != 0)
+            nSetVolume(_hNative, _level);
     }
 
     void setToPlayerMute() {
@@ -76,13 +67,6 @@ public class DirectVolume implements VolumeControl {
 
     void playerClosed() {
     	_hNative = 0;
-    }
-
-    void setSystemVolume(int level) {
-        if (_systemLevel != level) {
-            _systemLevel = level;
-            setToThisPlayerLevel();
-        }
     }
 
     public int getLevel() {
@@ -112,16 +96,13 @@ public class DirectVolume implements VolumeControl {
             return _level;
         }
 
-        // Try to set the native player volume 
-        if (_systemLevel != -1) {
-            level = level * _systemLevel / 100;
-        }
-        if (-1 == nSetVolume(_hNative, level)) {
-            if (Logging.REPORT_LEVEL <= Logging.ERROR) {
-            Logging.report(Logging.ERROR, LogChannels.LC_MMAPI, 
-                "set volume failed volume=" + _level);
-            }
-        }
+	// Try to set the native player volume 
+	if (-1 == nSetVolume(_hNative, level)) {
+	    if (Logging.REPORT_LEVEL <= Logging.ERROR) {
+		Logging.report(Logging.ERROR, LogChannels.LC_MMAPI, 
+		    "set volume failed volume=" + _level);
+	    }
+	}
 
         _level = level;
         _player.sendEvent(PlayerListener.VOLUME_CHANGED, this);

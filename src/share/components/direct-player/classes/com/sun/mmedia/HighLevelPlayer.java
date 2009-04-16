@@ -221,16 +221,6 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
      */
     final private static Object idLock = new Object();
     
-    /**
-     * The task that is used to send the System Volume Changed event.
-     */
-    private static Runnable changeSystemVolumeTask = null;
-    
-    /**
-     * System Volume level. This value will be set for all players from this VM.
-     */
-    private static int systemVolume = 100;
-
     // Init native library
     private native int nInit(int appId, int pID, String URI)
                                             throws MediaException, IOException;
@@ -247,16 +237,6 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
 
     private static String PL_ERR_SH = "Cannot create a Player: ";
     
-    private void setHandledByJava()
-    {
-        handledByJava = true;
-        if( 0 != hNative )
-        {
-            nTerm( hNative );
-            hNative = 0;
-        }
-    }
-
     /**
      * Constructor 
      */
@@ -284,7 +264,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                 hNative = 0;
                 throw new MediaException("Unsupported Media Format:" + mediaFormat + " for " + source.getLocator());
             } else {
-                setHandledByJava();
+                handledByJava = true;
             }
         }
 
@@ -602,12 +582,8 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         if (type == null && stream != null && stream.getContentDescriptor() != null) {
             type = stream.getContentDescriptor().getContentType();
         }
-
-        if( !handledByJava )
-        {
-            /* try to realize native player */
-            nRealize(hNative, type);
-        }
+        /* try to realize native player */
+        nRealize(hNative, type);
 
         mediaDownload = null;
 
@@ -621,7 +597,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                         !format.equals(MEDIA_FORMAT_UNKNOWN) && 
                         !format.equals(MEDIA_FORMAT_UNSUPPORTED)) {
                     mediaFormat = format;
-                    setHandledByJava();
+                    handledByJava = true;
                 } else {
                     throw new MediaException("Unsupported media format ('" + type + "','" + mediaFormat + "')");
                 }
@@ -773,10 +749,6 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
      */
     boolean loopAfterEOM = false;
 
-    private boolean hasZeroDuration()
-    {
-        return ( isDevicePlayer() && !hasToneSequenceSet ) ;
-    }
     /**
      * Starts the <code>Player</code> as soon as possible.
      * If the <code>Player</code> was previously stopped
@@ -824,7 +796,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             prefetch();
         }
 
-        if ( hasZeroDuration() ) {
+        if (isDevicePlayer() && !hasToneSequenceSet) {
             sendEvent(PlayerListener.STARTED, new Long(0));
             sendEvent( PlayerListener.END_OF_MEDIA, new Long(0) );
             return;
@@ -1168,10 +1140,6 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
     public long getMediaTime() {
         chkClosed(false);
         long time = TIME_UNKNOWN;
-        if( hasZeroDuration() )
-        {
-            return 0;
-        }
         if( null != lowLevelPlayer )
         {
             time = lowLevelPlayer.doGetMediaTime();
@@ -1206,10 +1174,6 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
     public long getDuration() {
         chkClosed(false);
         long dur = TIME_UNKNOWN;
-        if( hasZeroDuration() )
-        {
-            return 0;
-        }
         if( null != lowLevelPlayer )
         {
             dur = lowLevelPlayer.doGetDuration();
@@ -1453,61 +1417,24 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
     }
 
     /**
-     * Send system volume changed event to all of the player from this VM
+     * Send external volume changed event to all of the player from this VM
      */
-    public static void sendSystemVolumeChanged(int volume) {
+    public static void sendExternalVolumeChanged(String evt, int volume) {
         if (mplayers == null) {
             return;
         }
 
-        systemVolume = volume;
-        
-        if (changeSystemVolumeTask == null) {
-            changeSystemVolumeTask = new Runnable() {
-                private boolean isRunning = false;
-                private int waiting = 0;
-                public void run() {
-                    synchronized (this) {
-                        if (isRunning) {
-                            /* the task is already running */
-                            waiting++;
-                            try {
-                                this.wait();
-                            } catch (InterruptedException ie) {
-                                return;
-                            } finally {
-                                waiting--;
-                            }
-                        } else {
-                            isRunning = true;
-                        }
-                    }
-                    for (Enumeration e = mplayers.elements(); e.hasMoreElements();) {
-                        if (waiting > 0) {
-                            /* New task is waiting. Exitting */
-                            break;
-                        }
-                        HighLevelPlayer p = (HighLevelPlayer) e.nextElement();
-                        /* Send event to player if this player is in realized state (or above) */
-                        int state = p.getState();
-                        if (state >= Player.REALIZED) {
-                            VolumeControl vc = (VolumeControl)p.getControl("VolumeControl");
-                            if (vc != null && vc instanceof DirectVolume) {
-                                ((DirectVolume)vc).setSystemVolume(systemVolume);
-                            }
-                        }
-                    }
-                    synchronized (this) {
-                        if (waiting > 0) {
-                            this.notify();
-                        } else {
-                            isRunning = false;
-                        }
-                    }
+        /* Send event to player if this player is in realized state (or above) */
+        for (Enumeration e = mplayers.elements(); e.hasMoreElements();) {
+            HighLevelPlayer p = (HighLevelPlayer) e.nextElement();
+            int state = p.getState();
+            if (state >= Player.REALIZED) {
+                VolumeControl vc = (VolumeControl)p.getControl("VolumeControl");
+                if (vc != null) {
+                    vc.setLevel(volume);
                 }
-            };
+            }
         }
-        new Thread(changeSystemVolumeTask).start();
     }
 
     /**
