@@ -272,7 +272,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         locator = source.getLocator();
         hNative = nInit(appId, pID, locator);
 
-        mplayers.put(new Integer(pID), this);
+        mplayers.put(new Integer(pID), new PlayerWrapper(this));
 
         mediaFormat     = nGetMediaFormat(hNative);
 
@@ -330,10 +330,6 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                 }
 
                 stream = streams[0];
-                if( 0 == stream.getContentLength() )
-                {
-                    throw new MediaException("Media size is zero");
-                }
             }
         }
 
@@ -353,6 +349,70 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                 }
             }.start();
         }
+    }
+
+    private boolean deviceNotAvailable = false;
+    private Object deviceNotAvailableSync = new Object();
+    private String deviceName = null;
+    void notifyDeviceAvailable(final boolean available, final String deviceName) {
+        int state = getState();
+        
+        if (null == lowLevelPlayer || state == UNREALIZED || state == CLOSED) {
+            return;
+        }
+        this.deviceName = deviceName;
+        if (state == REALIZED) {
+            synchronized (deviceNotAvailableSync) {
+                if (available != !deviceNotAvailable) {
+                    if (available) {
+                        deviceNotAvailable = false;
+                        sendEvent(PlayerListener.DEVICE_AVAILABLE, deviceName);
+                    } else {
+                        deviceNotAvailable = true;
+                        sendEvent(PlayerListener.DEVICE_UNAVAILABLE, deviceName);
+                    }
+                }
+            }
+            return;
+        }
+        if (available && state > REALIZED) {
+            return;
+        }
+        
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    
+                    if (getState() > PREFETCHED) {
+                        // wait for all events achieve player
+                        try {Thread.sleep(300);} catch (InterruptedException ie) {}
+                    }
+                    if (getState() >= PREFETCHED) {
+                        deallocate();
+                    }
+                    if (getState() == REALIZED) {
+                        synchronized (deviceNotAvailableSync) {
+                            if (available != !deviceNotAvailable) {
+                                if (available) {
+                                    deviceNotAvailable = false;
+                                    sendEvent(PlayerListener.DEVICE_AVAILABLE, deviceName);
+                                } else {
+                                    deviceNotAvailable = true;
+                                    sendEvent(PlayerListener.DEVICE_UNAVAILABLE, deviceName);
+                                }
+                            }
+                        }
+                    }
+                } catch (IllegalStateException ise) {
+                    // ignore
+                } catch (RuntimeException re) {
+                    throw re;
+                } catch (Exception e) {
+                    sendEvent(PlayerListener.ERROR, "Error "+deviceName+" "+e);
+                }
+            }
+        }).start();
+        
     }
 
     void notifySnapshotFinished()
@@ -589,7 +649,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
      * <i>REALIZED</i> state.
      * <p>
      * If <code>realize</code> is called when the <code>Player</code> is in
-     * the <i>REALIZED</i>, <i>PREFETCHTED</i> or <i>STARTED</i> state,
+     * the <i>REALIZED</i>, <i>PREFETCHED</i> or <i>STARTED</i> state,
      * the request will be ignored.
      *
      * @exception IllegalStateException Thrown if the <code>Player</code>
@@ -753,6 +813,12 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             return;
         }
 
+        synchronized (deviceNotAvailableSync) {
+            if (deviceNotAvailable) {
+                deviceNotAvailable = false;
+                sendEvent(PlayerListener.DEVICE_AVAILABLE, deviceName);
+            }
+        }
         lowLevelPlayer.doPrefetch();
 
         VolumeControl vc = ( VolumeControl )getControl(
@@ -1472,12 +1538,13 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
 
         String fullName = getFullControlName( type );
 
-        Control c = null;
+        Control c = ( Control )htControls.get( fullName );
+        if (c != null) {
+            return c;
+        }
         synchronized( this )
         {
-            c = ( Control )htControls.get( fullName );
-            if( null == c &&
-                null == controls &&
+            if( null == controls &&
                 getPossibleControlNames().contains( fullName ) )
             {
                 c = lowLevelPlayer.doGetNewControl( fullName );
@@ -1497,7 +1564,16 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
      * @return      Description of the Return Value
      */
     public static HighLevelPlayer get(int pid) {
-        return (HighLevelPlayer) (mplayers.get(new Integer(pid)));
+        Integer n = new Integer(pid);
+        PlayerWrapper pw = (PlayerWrapper) mplayers.get(n);
+        if (pw != null) {
+            HighLevelPlayer p = pw.getPlayer();
+            if (p == null) {
+                mplayers.remove(n);
+            }
+            return p;
+        }
+        return null;
     }
 
     /**
@@ -1535,14 +1611,14 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                             /* New task is waiting. Exitting */
                             break;
                         }
-                        HighLevelPlayer p = (HighLevelPlayer) e.nextElement();
+                        HighLevelPlayer p = ((PlayerWrapper) e.nextElement()).getPlayer();
+                        if (p == null) {
+                            continue;
+                        }
                         /* Send event to player if this player is in realized state (or above) */
                         int state = p.getState();
-                        if (state >= Player.REALIZED) {
-                            VolumeControl vc = (VolumeControl)p.getControl("VolumeControl");
-                            if (vc != null && vc instanceof DirectVolume) {
-                                ((DirectVolume)vc).setSystemVolume(systemVolume);
-                            }
+                        if (state >= Player.REALIZED && p.lowLevelPlayer != null) {
+                            p.lowLevelPlayer.doNotifySystemVolumeChanged(systemVolume);
                         }
                     }
                     synchronized (this) {
@@ -1574,7 +1650,10 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         }
 
         for (Enumeration e = mplayers.elements(); e.hasMoreElements();) {
-            HighLevelPlayer p = (HighLevelPlayer) e.nextElement();
+            HighLevelPlayer p = ((PlayerWrapper) e.nextElement()).getPlayer();
+            if (p == null) {
+                continue;
+            }
 
             int state = p.getState();
             long time = p.getMediaTime();
@@ -1610,7 +1689,10 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         }
         
         for (Enumeration e = mplayers.elements(); e.hasMoreElements();) {
-            HighLevelPlayer p = (HighLevelPlayer) e.nextElement();
+            HighLevelPlayer p = ((PlayerWrapper) e.nextElement()).getPlayer();
+            if (p == null) {
+                continue;
+            }
 
             int state = ((Integer) pstates.get(p)).intValue();
             long time = ((Long) mtimes.get(p)).longValue();
@@ -1643,12 +1725,16 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         pstates.clear();
         mtimes.clear();
     }
+    
+    static Hashtable getPlayerList() {
+        return mplayers;
+    }
 
     /**
      * the default size of the event queue
      * can be overridden by descendants
      */
-    int eventQueueSize = 20;
+    int eventQueueSize = 200;
 
     /**
      *  Description of the Method
