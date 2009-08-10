@@ -37,6 +37,8 @@ import  com.sun.j2me.app.AppIsolate;
 import  com.sun.j2me.log.Logging;
 import  com.sun.j2me.log.LogChannels;
 
+import  java.lang.ref.WeakReference;
+
 import java.io.IOException;
 
 public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl {
@@ -272,7 +274,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         locator = source.getLocator();
         hNative = nInit(appId, pID, locator);
 
-        mplayers.put(new Integer(pID), this);
+        mplayers.put(new Integer(pID), new PlayerWrapper(this));
 
         mediaFormat     = nGetMediaFormat(hNative);
 
@@ -330,10 +332,14 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                 }
 
                 stream = streams[0];
-                if( 0 == stream.getContentLength() )
-                {
-                    throw new MediaException("Media size is zero");
-                }
+            }
+        }
+
+        synchronized (evtLock)
+        {
+            if (evtQ == null)
+            {
+                evtQ = new EvtQ(this);
             }
         }
 
@@ -353,6 +359,70 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                 }
             }.start();
         }
+    }
+
+    private boolean deviceNotAvailable = false;
+    private Object deviceNotAvailableSync = new Object();
+    private String deviceName = null;
+    void notifyDeviceAvailable(final boolean available, final String deviceName) {
+        int state = getState();
+        
+        if (null == lowLevelPlayer || state == UNREALIZED || state == CLOSED) {
+            return;
+        }
+        this.deviceName = deviceName;
+        if (true || state == REALIZED) {
+            synchronized (deviceNotAvailableSync) {
+                //if (available != !deviceNotAvailable) {
+                    if (available) {
+                        //deviceNotAvailable = false;
+                        sendEvent(PlayerListener.DEVICE_AVAILABLE, deviceName);
+                    } else {
+                        //deviceNotAvailable = true;
+                        sendEvent(PlayerListener.DEVICE_UNAVAILABLE, deviceName);
+                    }
+                //}
+            }
+            return;
+        }
+        //if (available && state > REALIZED) {
+        //    return;
+        //}
+        
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    
+                    if (getState() > PREFETCHED) {
+                        // wait for all events achieve player
+                        try {Thread.sleep(300);} catch (InterruptedException ie) {}
+                    }
+                    if (getState() >= PREFETCHED) {
+                        deallocate();
+                    }
+                    if (getState() == REALIZED) {
+                        synchronized (deviceNotAvailableSync) {
+                            //if (available != !deviceNotAvailable) {
+                                if (available) {
+                                    //deviceNotAvailable = false;
+                                    sendEvent(PlayerListener.DEVICE_AVAILABLE, deviceName);
+                                } else {
+                                    //deviceNotAvailable = true;
+                                    sendEvent(PlayerListener.DEVICE_UNAVAILABLE, deviceName);
+                                }
+                            //}
+                        }
+                    }
+                } catch (IllegalStateException ise) {
+                    // ignore
+                } catch (RuntimeException re) {
+                    throw re;
+                } catch (Exception e) {
+                    sendEvent(PlayerListener.ERROR, "Error "+deviceName+" "+e);
+                }
+            }
+        }).start();
+        
     }
 
     void notifySnapshotFinished()
@@ -479,7 +549,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
     /**
      * Send STOPPED_AT_TIME event. Call this after stopping the player
      */
-    void satev() {
+    synchronized void satev() {
         // Update the time base to use the system time
         // before stopping.
         updateTimeBase(false);
@@ -525,14 +595,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         }
 
         // Deliver the event to the listeners.
-        synchronized (evtLock) {
-            if (evtQ == null) {
-                evtQ = new EvtQ(this);
-            }
-            evtQ.sendEvent(evt, evtData);
-            // try to let listener run
-            Thread.currentThread().yield();
-        }
+        evtQ.sendEvent(evt, evtData);
 
         if (evt == PlayerListener.CLOSED || evt == PlayerListener.ERROR) {
             closedDelivered = true;
@@ -589,7 +652,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
      * <i>REALIZED</i> state.
      * <p>
      * If <code>realize</code> is called when the <code>Player</code> is in
-     * the <i>REALIZED</i>, <i>PREFETCHTED</i> or <i>STARTED</i> state,
+     * the <i>REALIZED</i>, <i>PREFETCHED</i> or <i>STARTED</i> state,
      * the request will be ignored.
      *
      * @exception IllegalStateException Thrown if the <code>Player</code>
@@ -616,6 +679,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         {
             /* try to realize native player */
             nRealize(hNative, type);
+            MMEventListener.setProperties(hNative);
         }
 
         mediaDownload = null;
@@ -753,6 +817,12 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             return;
         }
 
+        synchronized (deviceNotAvailableSync) {
+            if (deviceNotAvailable) {
+                deviceNotAvailable = false;
+                sendEvent(PlayerListener.DEVICE_AVAILABLE, deviceName);
+            }
+        }
         lowLevelPlayer.doPrefetch();
 
         VolumeControl vc = ( VolumeControl )getControl(
@@ -864,17 +934,20 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             }
         }
 
-        if (!lowLevelPlayer.doStart()) {
-            throw new MediaException("start");
+        synchronized( this )
+        {
+            if (!lowLevelPlayer.doStart()) {
+                throw new MediaException("start");
+            }
+
+            setState( STARTED );
+            sendEvent(PlayerListener.STARTED, new Long(getMediaTime()));
+
+            // Finish any pending startup stuff in subclass
+            // Typically used to start any threads that might potentially
+            // generate events before the STARTED event is delivered
+            lowLevelPlayer.doPostStart();
         }
-
-        setState( STARTED );
-        sendEvent(PlayerListener.STARTED, new Long(getMediaTime()));
-
-        // Finish any pending startup stuff in subclass
-        // Typically used to start any threads that might potentially
-        // generate events before the STARTED event is delivered
-        lowLevelPlayer.doPostStart();
 
     };
 
@@ -1472,12 +1545,13 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
 
         String fullName = getFullControlName( type );
 
-        Control c = null;
+        Control c = ( Control )htControls.get( fullName );
+        if (c != null) {
+            return c;
+        }
         synchronized( this )
         {
-            c = ( Control )htControls.get( fullName );
-            if( null == c &&
-                null == controls &&
+            if( null == controls &&
                 getPossibleControlNames().contains( fullName ) )
             {
                 c = lowLevelPlayer.doGetNewControl( fullName );
@@ -1497,7 +1571,16 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
      * @return      Description of the Return Value
      */
     public static HighLevelPlayer get(int pid) {
-        return (HighLevelPlayer) (mplayers.get(new Integer(pid)));
+        Integer n = new Integer(pid);
+        PlayerWrapper pw = (PlayerWrapper) mplayers.get(n);
+        if (pw != null) {
+            HighLevelPlayer p = pw.getPlayer();
+            if (p == null) {
+                mplayers.remove(n);
+            }
+            return p;
+        }
+        return null;
     }
 
     /**
@@ -1535,14 +1618,14 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                             /* New task is waiting. Exitting */
                             break;
                         }
-                        HighLevelPlayer p = (HighLevelPlayer) e.nextElement();
+                        HighLevelPlayer p = ((PlayerWrapper) e.nextElement()).getPlayer();
+                        if (p == null) {
+                            continue;
+                        }
                         /* Send event to player if this player is in realized state (or above) */
                         int state = p.getState();
-                        if (state >= Player.REALIZED) {
-                            VolumeControl vc = (VolumeControl)p.getControl("VolumeControl");
-                            if (vc != null && vc instanceof DirectVolume) {
-                                ((DirectVolume)vc).setSystemVolume(systemVolume);
-                            }
+                        if (state >= Player.REALIZED && p.lowLevelPlayer != null) {
+                            p.lowLevelPlayer.doNotifySystemVolumeChanged(systemVolume);
                         }
                     }
                     synchronized (this) {
@@ -1556,6 +1639,25 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             };
         }
         new Thread(changeSystemVolumeTask).start();
+    }
+
+    /**
+     * Send DEVICE_AVAILABLE event to all players in this VM
+     */
+    public static void sendDeviceAvailable() {
+        if (mplayers == null) {
+            return;
+        }
+
+        Enumeration mp = mplayers.elements();
+        while (mp.hasMoreElements()) {
+            
+            PlayerWrapper pw = (PlayerWrapper)mp.nextElement();
+            HighLevelPlayer p = pw.getPlayer();
+            if (p != null && p.getState() != STARTED) {
+                p.notifyDeviceAvailable(true, "Native player is now available");
+            }
+        }
     }
 
     /**
@@ -1574,7 +1676,10 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         }
 
         for (Enumeration e = mplayers.elements(); e.hasMoreElements();) {
-            HighLevelPlayer p = (HighLevelPlayer) e.nextElement();
+            HighLevelPlayer p = ((PlayerWrapper) e.nextElement()).getPlayer();
+            if (p == null) {
+                continue;
+            }
 
             int state = p.getState();
             long time = p.getMediaTime();
@@ -1610,7 +1715,10 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         }
         
         for (Enumeration e = mplayers.elements(); e.hasMoreElements();) {
-            HighLevelPlayer p = (HighLevelPlayer) e.nextElement();
+            HighLevelPlayer p = ((PlayerWrapper) e.nextElement()).getPlayer();
+            if (p == null) {
+                continue;
+            }
 
             int state = ((Integer) pstates.get(p)).intValue();
             long time = ((Long) mtimes.get(p)).longValue();
@@ -1643,12 +1751,16 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         pstates.clear();
         mtimes.clear();
     }
+    
+    static Hashtable getPlayerList() {
+        return mplayers;
+    }
 
     /**
      * the default size of the event queue
      * can be overridden by descendants
      */
-    int eventQueueSize = 20;
+    int eventQueueSize = 200;
 
     /**
      *  Description of the Method
@@ -1689,7 +1801,8 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         /**
          * the player instance
          */
-        private HighLevelPlayer p;
+        WeakReference pRef;
+        
         /**
          * event type array
          */
@@ -1710,7 +1823,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
          *        this event queue.
          */
         EvtQ(HighLevelPlayer p) {
-            this.p = p;
+            pRef = new WeakReference(p);
             evtQ = new String[p.eventQueueSize];
             evtDataQ = new Object[p.eventQueueSize];
             start();
@@ -1727,20 +1840,23 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
 
             // Wait if the event queue is full.
             // This potentially will block the Player's main thread.
-            while ((head + 1) % p.eventQueueSize == tail) {
-                try {
-                    wait(1000);
-                } catch (Exception e) {
+            HighLevelPlayer p = (HighLevelPlayer)pRef.get();
+            if (p != null) {
+                while ((head + 1) % p.eventQueueSize == tail) {
+                    try {
+                        wait(1000);
+                    } catch (Exception e) {
+                    }
                 }
+                evtQ[head] = evt;
+                evtDataQ[head] = evtData;
+                if (++head == p.eventQueueSize) {
+                    head = 0;
+                }
+                notifyAll();
+                // try to let other threads run
+                Thread.currentThread().yield();
             }
-            evtQ[head] = evt;
-            evtDataQ[head] = evtData;
-            if (++head == p.eventQueueSize) {
-                head = 0;
-            }
-            notifyAll();
-            // try to let other threads run
-            Thread.currentThread().yield();
         }
 
         /**
@@ -1758,7 +1874,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             boolean evtSent = false;
 
             for (;;) {
-
+                HighLevelPlayer p;
                 synchronized (this) {
 
                     // If the queue is empty, we'll wait
@@ -1768,6 +1884,11 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                         } catch (Exception e) {
                         }
                     }
+                    p = (HighLevelPlayer)pRef.get();
+                    if (p == null) {
+                        break;
+                    }
+
                     if (head != tail) {
                         evt = evtQ[tail];
                         evtData = evtDataQ[tail];
@@ -1850,9 +1971,8 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                 synchronized (this) {
                     if (head == tail && evtSent && !evtToGo) {
                         synchronized (p.evtLock) {
-                            p.evtQ = null;
-                            break;
-                            // Exit the event thread.
+                            head = 0;
+                            tail = 0;
                         }
                     }
                 }

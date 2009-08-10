@@ -29,10 +29,11 @@
 #include "javavm/include/porting/sync.h"
 #include "KNICommon.h"
 
+#if 0
 static CVMMutex        nAudioMutex;
 static javacall_bool   nAudioMutexCreated = JAVACALL_FALSE;
 
-void LockAudioMutex() {
+void DoLockAudioMutex() {
     if(!nAudioMutexCreated) {
         CVMmutexInit(&nAudioMutex);
         nAudioMutexCreated = JAVACALL_TRUE;
@@ -43,7 +44,7 @@ void LockAudioMutex() {
 void UnlockAudioMutex() {
     CVMmutexUnlock(&nAudioMutex);
 }
-
+#endif
 
 /**
  * @brief Describes a thread waiting for a native event.
