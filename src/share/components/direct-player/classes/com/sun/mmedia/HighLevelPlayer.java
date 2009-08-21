@@ -247,6 +247,15 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
 
     private static String PL_ERR_SH = "Cannot create a Player: ";
     
+    synchronized void abort( String msg )
+    {
+        if( CLOSED != getState() )
+        {
+            close();
+            sendEvent(PlayerListener.ERROR, msg );
+        }
+    }
+
     private void setHandledByJava()
     {
         handledByJava = true;
@@ -254,6 +263,11 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         {
             nTerm( hNative );
             hNative = 0;
+        }
+        if( null != directInputThread )
+        {
+            directInputThread.close();
+            directInputThread = null;
         }
     }
 
@@ -365,19 +379,14 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             
     void continueDownload() {
         /* predownload media data to fill native buffers */
-        if (mediaDownload != null) {
-            mediaDownload.continueDownload();
+        if ( null != directInputThread ) {
+            directInputThread.requestData();
         }
     }
 
     public int getNativeHandle()
     {
         return hNative;
-    }
-
-    void setNativeHandleToNull()
-    {
-        hNative = 0;
     }
 
     /**
@@ -560,7 +569,8 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         }
     }
 
-    protected MediaDownload mediaDownload = null;
+    //protected MediaDownload mediaDownload = null;
+    private DirectInputThread directInputThread = null;
 
     /**
      * Check to see if the Player is closed.  If the
@@ -612,13 +622,30 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             type = stream.getContentDescriptor().getContentType();
         }
 
+        directInputThread = null;
+
         if( !handledByJava )
         {
-            /* try to realize native player */
-            nRealize(hNative, type);
-        }
+            if( !handledByDevice && !mediaFormat.equals(MEDIA_FORMAT_TONE) )
+            {
+            /* predownload media data to recognize media format and/or
+               specific media parameters (e.g. duration) */
 
-        mediaDownload = null;
+                directInputThread = new DirectInputThread( this );
+                directInputThread.start();
+            }
+
+            final String t = type;
+            runLowLevel( new LowLevelTask() {
+                public void run() throws MediaException {
+                    nRealize(hNative, t);
+                }
+            } );
+            System.out.println("HighLevelPlayer: realize() resumed");
+            if( isAsyncExec() && !getAsyncExecResult() ) {
+                throw new MediaException("realize() failed");
+            }
+        }
 
         if (!handledByDevice && !handledByJava) {
             mediaFormat = nGetMediaFormat(hNative);
@@ -633,20 +660,6 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
                     setHandledByJava();
                 } else {
                     throw new MediaException("Unsupported media format ('" + type + "','" + mediaFormat + "')");
-                }
-            }
-            /* predownload media data to recognize media format and/or 
-               specific media parameters (e.g. duration) */
-            if (!mediaFormat.equals(MEDIA_FORMAT_TONE)) {
-                mediaDownload = new MediaDownload(hNative, stream);
-                try {
-                    mediaDownload.fgDownload();
-                } catch(IOException ex1) {
-                    ex1.printStackTrace();
-                    throw new MediaException("Can not start download Thread: " + ex1);
-                }catch(Exception ex) {
-                    ex.printStackTrace();
-                    throw new MediaException( "Can not start download Thread: " + ex );
                 }
             }
         }
@@ -702,6 +715,62 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
 
     }
 
+    private boolean isBlockedUntilEvent = false;
+
+    private interface LowLevelTask {
+        public void run() throws MediaException;
+    }
+
+    private void runLowLevel( LowLevelTask task ) throws MediaException
+    {
+        final Object lock = getAsyncExecLock();
+        if (null != lock) {
+            synchronized (lock) {
+                task.run();
+                isBlockedUntilEvent = true;
+                while (isBlockedUntilEvent) {
+                    try {
+                        lock.wait();
+                    } catch (InterruptedException ex) {
+                    }
+                }
+                System.out.println(
+                        "HighLevelPlayer: runAndWaitIfAsync() unblocked");
+            }
+        } else {
+            task.run();
+        }
+    }
+
+    private Object getAsyncExecLock()
+    {
+        return directInputThread;
+    }
+
+    private boolean asyncExecResult = false;
+    private boolean getAsyncExecResult() {
+        return asyncExecResult;
+    }
+
+    private boolean isAsyncExec()
+    {
+        return ( getAsyncExecLock() != null );
+    }
+
+    void unblockOnEvent( boolean result )
+    {
+        final Object lock = getAsyncExecLock();
+        if( null != lock )
+        {
+            synchronized( lock )
+            {
+                isBlockedUntilEvent = false;
+                asyncExecResult = result;
+                lock.notify();
+            }
+        }
+    }
+    
     /**
      * Acquires the scarce and exclusive resources
      * and processes as much data as necessary
@@ -753,8 +822,18 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             return;
         }
 
-        lowLevelPlayer.doPrefetch();
-
+        /* prefetch native player */
+        /* predownload media data to fill native buffers */
+        runLowLevel( new LowLevelTask() {
+            public void run() throws MediaException {
+                lowLevelPlayer.doPrefetch();
+            }
+        });
+        System.out.println("HighLevelPlayer: Prefetch resumed");
+        if( isAsyncExec() && !getAsyncExecResult() ) {
+            throw new MediaException("prefetch() failed");
+        }
+        
         VolumeControl vc = ( VolumeControl )getControl(
                 pkgName + vocName);
         if (vc != null && (vc.getLevel() == -1)) {
@@ -784,6 +863,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
     {
         return ( isDevicePlayer() && !hasToneSequenceSet ) ;
     }
+
     /**
      * Starts the <code>Player</code> as soon as possible.
      * If the <code>Player</code> was previously stopped
@@ -819,6 +899,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
      * have security permission to start the <code>Player</code>.
      */
     public synchronized void start() throws MediaException {
+        DirectDebugOut.nDebugPrint("HighLevelPlayer.start() entered");
         if (getState() >= STARTED) {
             return;
         }
@@ -838,6 +919,7 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         }
 
         if (vmPaused) {
+            DirectDebugOut.nDebugPrint("HighLevelPlayer.start() is returning because vmPaused");
             return;
         }
         
@@ -864,8 +946,16 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             }
         }
 
-        if (!lowLevelPlayer.doStart()) {
-            throw new MediaException("start");
+        runLowLevel( new LowLevelTask() {
+            public void run() throws MediaException {
+                if (!lowLevelPlayer.doStart()) {
+                    throw new MediaException("start");
+                }
+            }
+        });
+        System.out.println( "HighLevelPlayer: start() resumed" );
+        if( isAsyncExec() && !getAsyncExecResult() ) {
+            throw new MediaException( "start() failed" );
         }
 
         setState( STARTED );
@@ -875,6 +965,8 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         // Typically used to start any threads that might potentially
         // generate events before the STARTED event is delivered
         lowLevelPlayer.doPostStart();
+
+        DirectDebugOut.nDebugPrint("HighLevelPlayer.start() is returning");
 
     };
 
@@ -919,7 +1011,16 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             return;
         }
         lowLevelPlayer.doPreStop();
-        lowLevelPlayer.doStop();
+
+        runLowLevel( new LowLevelTask() {
+            public void run() throws MediaException {
+                lowLevelPlayer.doStop();
+            }
+        });
+        System.out.println( "HighLevelPlayer: stop() resumed" );
+        if( isAsyncExec() && !getAsyncExecResult() ) {
+            throw new MediaException( "stop() failed" );
+        }
 
         // Update the time base to use the system time
         // before stopping.
@@ -971,8 +1072,16 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             }
         }
 
-        lowLevelPlayer.doDeallocate();
+        try {
+            runLowLevel(new LowLevelTask() {
 
+                public void run() throws MediaException {
+                    lowLevelPlayer.doDeallocate();
+                }
+            });
+        } catch (MediaException ex) {}
+        System.out.println( "HighLevelPlayer: deallocate() resumed" );
+        
         if (stream != null) {
             // if stream is not seekable, just return
             if (SourceStream.NOT_SEEKABLE != stream.getSeekType()) {
@@ -1033,10 +1142,25 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
 
         if( null != lowLevelPlayer )
         {
-            lowLevelPlayer.doDeallocate();
-            lowLevelPlayer.doClose();
+
+            System.out.println( "HighLevelPlayer: close() entered" );
+            try {
+                runLowLevel(new LowLevelTask() {
+                    public void run() throws MediaException {
+                        lowLevelPlayer.doClose();
+                        System.out.println( "HighLevelPlayer: doClose() returned" );
+                    }
+                });
+            } catch (MediaException ex) {}
+
+            System.out.println( "HighLevelPlayer: close() resumed" );
+            
+            if (null != directInputThread) {
+                directInputThread.close();
+            }
         }
-        else if(hNative != 0) {
+
+        if(hNative != 0) {
             nTerm(hNative);
             hNative = 0;
         }
@@ -1100,6 +1224,18 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
         return this;
     };
 
+    private long mediaTimeSet = TIME_UNKNOWN;
+
+    void notifyMediaTimeSet( long mediaTimeSet )
+    {
+        this.mediaTimeSet = mediaTimeSet;
+    }
+
+    private long getMediaTimeSet()
+    {
+        return mediaTimeSet;
+    }
+
     /**
      * Sets the <code>Player</code>'s&nbsp;<i>media time</i>.
      * <p>
@@ -1141,7 +1277,17 @@ public final class HighLevelPlayer implements Player, TimeBase, StopTimeControl 
             now = theDur;
         }
 
-        long rtn = lowLevelPlayer.doSetMediaTime(now);
+        final long timeToSet = now;
+        runLowLevel( new LowLevelTask() {
+            public void run() throws MediaException {
+                lowLevelPlayer.doSetMediaTime( timeToSet );
+            }
+        } );
+
+        System.out.println( "HighLevelPlayer: setMediaTime resumed" );
+
+        long rtn = getMediaTimeSet();
+
         EOM = false;
 
         // Time-base-time needs to be updated if player is started.

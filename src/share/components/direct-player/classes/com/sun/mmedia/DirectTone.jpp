@@ -109,9 +109,6 @@ final class DirectTone extends DirectPlayer {
         if (!nPrefetch(hNative)) {
             throw new MediaException("Can not prefetch");
         }
-        if(!nAcquireDevice(hNative)) {
-            throw new MediaException("Can not acquire device");
-        }
         state = Player.PREFETCHED;
     }
 
@@ -149,6 +146,7 @@ final class DirectTone extends DirectPlayer {
         return DefaultConfiguration.MIME_AUDIO_TONE;
     }
 
+    protected native void nSetSequence( int handle, byte[] seq );
     /**
      * Sets the tone sequence.<p>
      * 
@@ -165,15 +163,11 @@ final class DirectTone extends DirectPlayer {
             throw new IllegalStateException("cannot set seq after prefetched");
 
         int hNative = getOwner().getNativeHandle();
-        nFlushBuffer(hNative);
 
         long contentSize = sequence.length;
         if (contentSize > 0) {
-            MediaDownload.nSetWholeContentSize(hNative, contentSize);
+            nSetSequence( hNative, sequence );
         }
-
-        MediaDownload.nBuffering(hNative, sequence,  0, sequence.length);
-        MediaDownload.nBuffering(hNative, null, 0, 0);
 
         getOwner().hasToneSequenceSet = true;
     }

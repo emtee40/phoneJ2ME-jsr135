@@ -99,34 +99,26 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
 // Native functions /////////////////////////////////////////////////
     
     // Terminate native library
-    protected native int nTerm(int handle);
+    protected native int nClose(int handle);
     // Get Content Type
     protected native String nGetContentType(int handle);
     // Access to Radio Tuner for a Java Player is exclusive. 
     // Acquire it or return false if it is not available
     private native boolean nAcquireRadioAccess();
-    // Device is available?
-    protected native boolean nAcquireDevice(int handle);
     // Relase device reference
     protected native void nReleaseDevice(int handle);
     // Access to Radio Tuner for a Java Player is exclusive. Release it
     private native void nReleaseRadioAccess();
-    // Clear buffered data
-    protected native boolean nFlushBuffer(int handle);
     // Start playing
     protected native boolean nStart(int handle);
-    // Stop playing
-    protected native boolean nStop(int handle);
     // Get current media time as ms
     protected native int nGetMediaTime(int handle);
     // Set media time as ms
-    protected native int nSetMediaTime(int handle, long ms);
+    protected native boolean nSetMediaTime(int handle, long ms);
     // Get total duration of media data
     protected native int nGetDuration(int handle);
     // Pause
     protected native boolean nPause(int handle);
-    // Resume
-    protected native boolean nResume(int handle);
     // Need buffering from Java side?
     protected native boolean nIsNeedBuffering(int handle);
     // Switch to foreground
@@ -322,20 +314,11 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
     private void prefetchData() throws MediaException
     {
         int hNative = getOwner().getNativeHandle();
+            
         /* prefetch native player */
+        /* predownload media data to fill native buffers */
         if (!nPrefetch(hNative)) {
             throw new MediaException("Can not prefetch");
-        }
-
-        if (!getOwner().handledByDevice) {
-            /* predownload media data to fill native buffers */
-            if (getOwner().mediaDownload != null) {
-                try {
-                    getOwner().mediaDownload.fgDownload();
-                } catch (IOException ex) {
-                    throw new MediaException("Can not start media download thread : " + ex);
-                }
-            }
         }
     }
     
@@ -349,11 +332,6 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
                         "by a Java Player" );
             }
             hasTakenRadioAccess = true;
-        }
-
-        if(!nAcquireDevice(getOwner().getNativeHandle())) {
-            releaseRadioAccess();
-            throw new MediaException("Can not acquire device");
         }
     }
     
@@ -413,16 +391,6 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
             midiControl.playerStarted();
         }
         
-        if ( getOwner().mediaDownload != null) {
-            try {
-                getOwner().mediaDownload.bgDownload();
-            } catch(Exception ex) {
-                try {
-                    getOwner().stop();
-                } catch(MediaException mEx) {
-                }
-            }
-        }
     }
     
     /**
@@ -440,13 +408,9 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
             videoControl.start();
         }
         int hNative = getOwner().getNativeHandle();
-        if (isFirstStart || (0 == getOwner().getMediaTime())) {
-            ret = nStart(hNative);
-            isFirstStart = false;
-        } else {
-            ret = nResume(hNative);    
-        }
 
+        ret = nStart( hNative );
+        
         state = Player.STARTED;
         return ret;
     }
@@ -495,7 +459,7 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
         {
             videoControl.stop();
         }
-        
+
         if (false == nPause(getOwner().getNativeHandle())) {
             throw new MediaException("Player cannot be stopped");
         }
@@ -522,10 +486,6 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
         }
         
         releaseRadioAccess();
-
-        if (getOwner().mediaDownload != null) {
-            getOwner().mediaDownload.deallocate();
-        }
 
         nReleaseDevice(getOwner().getNativeHandle());
 
@@ -573,12 +533,8 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
         int hNative = getOwner().getNativeHandle();
 
         if (hNative != 0) {
-            if ( true == nIsNeedBuffering(hNative) ) {
-                nFlushBuffer(hNative);
-            }
-            nTerm(hNative);
+            nClose(hNative);
             this.hNative = 0;
-            getOwner().setNativeHandleToNull();
         }
         state = Player.CLOSED;
     }
@@ -598,11 +554,11 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
 
         if (Player.TIME_UNKNOWN != dur && now > dur) now = dur;
         
-        int ret = nSetMediaTime(getOwner().getNativeHandle(), now/1000);
-        if (ret == -1) {
+        if ( !nSetMediaTime(getOwner().getNativeHandle(), now/1000) ) {
             throw new MediaException("media time cannot be set");
         }                
-        return ((long)ret * 1000);
+        return -1; // the actual result will be return asynchronously,
+                   // with event
     }
     
     /**

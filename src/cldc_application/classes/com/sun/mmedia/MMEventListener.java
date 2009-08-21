@@ -35,21 +35,29 @@ class MMEventListener implements EventListener {
     /**
      *  the following constants must be consistent 
      *  with javacall_media_notification_type enum values
-     *  JAVACALL_EVENT_MEDIA_***, defined in javacall_multimedia.h
+     *  JAVACALL_EVENT_MEDIA_***, defined in javanotify_multimedia.h
      */
-    private static final int EVENT_MEDIA_END_OF_MEDIA       =  1;
-    private static final int EVENT_MEDIA_DURATION_UPDATED	=  2;
-    private static final int EVENT_MEDIA_RECORD_SIZE_LIMIT	=  3;
-    private static final int EVENT_MEDIA_RECORD_ERROR		=  4;
-    private static final int EVENT_MEDIA_DEVICE_AVAILABLE	=  5;
-    private static final int EVENT_MEDIA_DEVICE_UNAVAILABLE	=  6;
-    private static final int EVENT_MEDIA_NEED_MORE_MEDIA_DATA =  7;
-    private static final int EVENT_MEDIA_BUFFERING_STARTED	=  8;
-    private static final int EVENT_MEDIA_BUFFERING_STOPPED	=  9;
-    private static final int EVENT_MEDIA_VOLUME_CHANGED		= 10;
-    private static final int EVENT_MEDIA_SNAPSHOT_FINISHED	= 11;
-    private static final int EVENT_MEDIA_ERROR				= 12;
-    private static final int EVENT_MEDIA_SYSTEM_VOLUME_CHANGED		= 13;
+    private static final int EVENT_MEDIA_REALIZE_FINISHED        =  1;
+    private static final int EVENT_MEDIA_PREFETCH_FINISHED       =  2;
+    private static final int EVENT_MEDIA_START_FINISHED          =  3;
+    private static final int EVENT_MEDIA_STOP_FINISHED           =  4;
+    private static final int EVENT_MEDIA_DEALLOCATE_FINISHED     =  5;
+    private static final int EVENT_MEDIA_CLOSE_FINISHED          =  6;
+    private static final int EVENT_MEDIA_SET_MEDIA_TIME_FINISHED =  7;
+    private static final int EVENT_MEDIA_DATA_REQUEST            =  8;
+    private static final int EVENT_MEDIA_LENGTH_REQUEST          =  9;
+    private static final int EVENT_MEDIA_DEVICE_AVAILABLE        = 10;
+    private static final int EVENT_MEDIA_DEVICE_UNAVAILABLE      = 11;
+    private static final int EVENT_MEDIA_ERROR                   = 12;
+    private static final int EVENT_MEDIA_END_OF_MEDIA            = 13;
+    private static final int EVENT_MEDIA_DURATION_UPDATED        = 14;
+    private static final int EVENT_MEDIA_BUFFERING_STARTED       = 15;
+    private static final int EVENT_MEDIA_BUFFERING_STOPPED       = 16;
+    private static final int EVENT_MEDIA_RECORD_ERROR            = 17;
+    private static final int EVENT_MEDIA_RECORD_SIZE_LIMIT       = 18;
+    private static final int EVENT_MEDIA_VOLUME_CHANGED          = 19;
+    private static final int EVENT_MEDIA_SYSTEM_VOLUME_CHANGED   = 20;
+    private static final int EVENT_MEDIA_SNAPSHOT_FINISHED       = 21;
 
     MMEventListener() {
         MMEventHandler.setListener(this);
@@ -67,10 +75,12 @@ class MMEventListener implements EventListener {
      */
     public void process(Event event) {
         NativeEvent nevt = (NativeEvent)event;
-        HighLevelPlayer p;
+        HighLevelPlayer p = null;
 
-		if( EventTypes.MMAPI_EVENT != nevt.getType() ) return;
-		
+                if( EventTypes.MMAPI_EVENT != nevt.getType() ) {
+                    return;
+                }
+                
         switch ( nevt.intParam4 ) {
         case EVENT_MEDIA_END_OF_MEDIA:
             p = HighLevelPlayer.get(nevt.intParam1);
@@ -114,7 +124,7 @@ class MMEventListener implements EventListener {
             p = HighLevelPlayer.get(nevt.intParam1);
             if(p != null) {
                 p.receiveRSL();
-			}	
+                        }       
             break;
         
         case EVENT_MEDIA_RECORD_ERROR:
@@ -145,13 +155,34 @@ class MMEventListener implements EventListener {
             }
             break;
 
-        case EVENT_MEDIA_NEED_MORE_MEDIA_DATA:
+        case EVENT_MEDIA_DATA_REQUEST:
             p = HighLevelPlayer.get(nevt.intParam1);
+            DirectDebugOut.nDebugPrint("Java: MMEventListener: Data request");
             if (p != null) {
                 p.continueDownload();
             }
             break;
 
+        case EVENT_MEDIA_SET_MEDIA_TIME_FINISHED:
+            long time = ( long )nevt.intParam2 * 1000;
+            p = HighLevelPlayer.get(nevt.intParam1);
+            if (p != null) {
+                p.notifyMediaTimeSet(time);
+            }
+        case EVENT_MEDIA_REALIZE_FINISHED:
+        case EVENT_MEDIA_PREFETCH_FINISHED:
+        case EVENT_MEDIA_START_FINISHED:
+        case EVENT_MEDIA_STOP_FINISHED:
+        case EVENT_MEDIA_DEALLOCATE_FINISHED:
+        case EVENT_MEDIA_CLOSE_FINISHED:
+            if( null == p ) {
+                p = HighLevelPlayer.get(nevt.intParam1);
+            }
+            if (p != null) {
+                p.unblockOnEvent( 0 == nevt.intParam2 ); // JAVACALL_OK is 0 !
+            }
+            break;
+         
         case EVENT_MEDIA_SNAPSHOT_FINISHED:
             p = HighLevelPlayer.get( nevt.intParam1 );
             if( null != p )

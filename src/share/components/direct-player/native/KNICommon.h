@@ -93,12 +93,12 @@ typedef struct _KNIPlayerInfo {
     long offset;            /* Current offset of buffer */
     long firstPacketSize;   /* First packet Size */
     jboolean needMoreData;  /* need more media data immediatelly */
-    int isAcquire;          /* Is this player acquire devices? */
     int isDirectFile;       /* Is from direct file? */
     int isForeground;           /* Is in foreground? */
     int recordState;            /* State of recording */
     void* hBuffer;          /* Handle of buffer */
     void* pNativeHandle;    /* OEM can use this field to extend handle */
+    jboolean isClosed;     /* whether javacall_media_close() has been called */
 } KNIPlayerInfo;
 
 #endif
