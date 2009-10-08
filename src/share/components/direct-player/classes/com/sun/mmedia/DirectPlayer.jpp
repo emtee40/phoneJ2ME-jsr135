@@ -163,10 +163,10 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
     // -----------------------------
 
     // Get video width
-    protected native int nGetWidth(int handle);
+    native int nGetWidth(int handle);
 
     // Get video height
-    protected native int nGetHeight(int handle);
+    native int nGetHeight(int handle);
 
     // Set display location of video
     protected native boolean nSetLocation(int handle, int x, int y, int w, int h);
@@ -433,6 +433,20 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
      *         <code>false</code> otherwise.
      */
     protected boolean doStart() {
+        boolean result = false;
+        result =  ((Boolean) doSynchronously(new SynchronousAction() {
+            public Object run() throws Throwable {
+                return new Boolean(doStart0());
+            }
+            public Object onTimeout() throws Throwable {
+                System.out.println("doStart: sync timeout");
+                return Boolean.FALSE;
+            }
+        })).booleanValue();
+        return result;
+    }
+
+    private boolean doStart0() {
         boolean ret = false;
         
         if( null != videoControl )
@@ -490,6 +504,28 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
      * @exception  MediaException  Description of the Exception
      */
     protected void doStop() throws MediaException {
+        final Exception[] exc = new Exception[1];
+        doSynchronously(new SynchronousAction() {
+            public Object run() throws Throwable {
+                videoThread = null;
+                doStop0();
+                return null;
+            }
+            public void onException(Exception e) {
+                exc[0] = e;
+            }
+            public Object onTimeout() throws Throwable {
+                System.out.println("doStop: sync timeout");
+                throw new MediaException("Synchronization timeout");
+            }
+        });
+        
+        if (exc[0] != null && exc[0] instanceof MediaException) {
+            throw (MediaException) exc[0];
+        }
+    }
+    
+    private void doStop0() throws MediaException {
 
         if ( null != videoControl )
         {
@@ -538,6 +574,15 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
      * the <code>Player</code>.
      */
     protected void doClose() {
+        doSynchronously(new SynchronousAction() {
+            public Object run() throws Throwable {
+                videoThread = null;
+                doClose0();
+                return null;
+            }
+        });
+    }
+    private void doClose0() {
         if( null != videoControl )
         {
             videoControl.close();
@@ -677,11 +722,11 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
                 c = recordControl;
             }
         } else if (shortType.equals(HighLevelPlayer.stcName)) {
+            if (nIsStopTimeControlSupported(hNative)) {
             if (!getOwner().isCapturePlayer()) {
                 c = getOwner();
             }
-//            if (nIsStopTimeControlSupported(hNative)) {
-//            }
+            }
         } else if (shortType.equals(HighLevelPlayer.tecName)) {
             if (nIsTempoControlSupported(hNative)) {
                 if (midiControl == null) 
@@ -697,9 +742,9 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
         } else if (shortType.equals(HighLevelPlayer.vocName)) {
             if (nIsVolumeControlSupported(hNative)) {
                 if (dVolumeControl == null) {
-                    dVolumeControl = new DirectVolume( getOwner(), hNative);
+                    dVolumeControl = DirectVolume.newDirectVolume(getOwner(), hNative);
                 }
-                c = dVolumeControl;
+                c = dVolumeControl.getVolumeControl();
             }
         }
 
@@ -785,6 +830,12 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
 
         return ctype;
     }
+
+    protected void doNotifySystemVolumeChanged(int level) {
+        if (dVolumeControl != null) {
+            dVolumeControl.setSystemVolume(level);
+        }
+    }
     
     private boolean isVideoPlayer()
     {
@@ -794,19 +845,148 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
     // -------------------------------------------------
     // The interface VideoSource method implementations
     // -------------------------------------------------
-
+    
+    private Object videoSync = new Object();
+    private boolean videoBusy = false;
+    private static final int VIDEO_SYNC_TIMEOUT = 15000;
+    private Thread videoThread = null;
+    
+    private abstract class SynchronousAction {
+        public abstract Object run() throws Throwable;
+        public Object onTimeout() throws Throwable {return null;}
+        public void onException(Exception e) {}
+    }
+    
+    private Object doSynchronously(SynchronousAction todo) {
+        return doSynchronously(todo, false);
+    }
+    private Object doSynchronously(SynchronousAction todo, boolean threadCheck) {
+        Object result = null;
+        Throwable thr = null;
+        if (videoControl == null || !getOwner().isCapturePlayer()) {
+            try {
+                result = todo.run();
+            } catch (Throwable e) {
+                thr = e;
+            }
+            if (thr != null) {
+                if (thr instanceof Error) {
+                    throw (Error)thr;
+                }
+                if (thr instanceof RuntimeException) {
+                    throw (RuntimeException)thr;
+                }
+                todo.onException((Exception)thr);
+            }
+            return result;
+        }
+        synchronized (videoSync) {
+            do {
+                if (threadCheck && videoThread != null) {
+                    if (videoThread != Thread.currentThread()) {
+                        try {
+                            result = todo.onTimeout();
+                        } catch (Throwable e) {
+                            thr = e;
+                        }
+                        break;
+                    }
+                }
+                if (videoBusy) {
+                    try {
+                        videoSync.wait(VIDEO_SYNC_TIMEOUT);
+                    } catch (InterruptedException ie) {}
+                    if (videoBusy) {
+                        try {
+                            result = todo.onTimeout();
+                        } catch (Throwable e) {
+                            thr = e;
+                        }
+                        break;
+                    }
+                }
+                videoBusy = true;
+                
+                try {
+                    result = todo.run();
+                } catch (Throwable e) {
+                    thr = e;
+                }
+                videoBusy = false;
+                videoSync.notify();
+            } while (false);
+            
+            if (thr != null) {
+                if (thr instanceof Error) {
+                    throw (Error)thr;
+                }
+                if (thr instanceof RuntimeException) {
+                    throw (RuntimeException)thr;
+                }
+                todo.onException((Exception)thr);
+            }
+        }
+        return result;
+    }
+    
     // Set display location of video
-    public boolean setVideoLocation(int x, int y, int w, int h)
+    public boolean setVideoLocation(final int x, final int y, final int w, final int h)
     {
-        return nSetLocation( getOwner().getNativeHandle(), x, y, w, h );
+        return ((Boolean) doSynchronously(new SynchronousAction() {
+            public Object run() throws Throwable {
+                return new Boolean(nSetLocation( getOwner().getNativeHandle(), x, y, w, h ));
+            }
+            public Object onTimeout() throws Throwable {
+                System.out.println("setVideoLocation: sync timeout");
+                return Boolean.FALSE;
+            }
+        })).booleanValue();
     }
 
     private boolean isWaitingForSnapshot;
     // Get snapshot
-    public synchronized byte[] getVideoSnapshot(String imageType) throws MediaException
+    public synchronized byte[] getVideoSnapshot(final String imageType) throws MediaException {
+        
+        getOwner().checkSnapshotPermission();
+        if (getOwner().getState() != Player.STARTED || videoControl == null ||
+                    !videoControl.getVisible()) {
+            System.out.println("Player is not started or invisible");
+            return new byte[0];
+        }
+
+        if (!videoControl.waitForPaint()) {
+            return new byte[0];
+        }
+        
+        byte[] result = null;
+        final Exception[] exc = new Exception[1];
+        result =  (byte[]) doSynchronously(new SynchronousAction() {
+            public Object run() throws Throwable {
+                videoThread = Thread.currentThread();
+                return getVideoSnapshot0(imageType);
+            }
+            public void onException(Exception e) {
+                exc[0] = e;
+            }
+            public Object onTimeout() throws Throwable {
+                System.out.println("getVideoSnapshot: sync timeout");
+                return null;
+            }
+        }, true);
+        
+        if (exc[0] != null && exc[0] instanceof MediaException) {
+            throw (MediaException) exc[0];
+        }
+        return result;
+    }
+    
+    private byte[] getVideoSnapshot0(String imageType) throws MediaException
     {
         byte [] ret = null;
-        getOwner().checkSnapshotPermission();
+        if (getOwner().getState() != Player.STARTED || !videoControl.getVisible()) {
+            System.out.println("Player is not started or invisible");
+            return new byte[0];
+        }
         int hNative = getOwner().getNativeHandle();
         try {
             synchronized ( snapshotLock )
@@ -845,15 +1025,34 @@ class DirectPlayer extends LowLevelPlayer implements VideoSource
     }
     
     // Set fullscreen
-    public boolean setVideoFullScreen( boolean fullscreen)
+    public boolean setVideoFullScreen(final boolean fullscreen)
     {
-        return nSetFullScreenMode( getOwner().getNativeHandle(), fullscreen );
+        return ((Boolean) doSynchronously(new SynchronousAction() {
+            public Object run() throws Throwable {
+                return new Boolean(nSetFullScreenMode( getOwner().getNativeHandle(), fullscreen ));
+            }
+            public Object onTimeout() throws Throwable {
+                System.out.println("setVideoFullScreen: sync timeout");
+                return Boolean.FALSE;
+            }
+        })).booleanValue();
     }
     
     // Set visible
-    public boolean setVideoVisible( boolean visible)
+    public boolean setVideoVisible(final boolean visible)
     {
-        return nSetVisible( getOwner().getNativeHandle(), visible );
+        return ((Boolean) doSynchronously(new SynchronousAction() {
+            public Object run() throws Throwable {
+                if (!visible) {
+                    videoThread = null;
+                }
+                return new Boolean(nSetVisible( getOwner().getNativeHandle(), visible ));
+            }
+            public Object onTimeout() throws Throwable {
+                System.out.println("setVideoVisible: sync timeout");
+                return new Boolean(visible);
+            }
+        })).booleanValue();
     }
     
     private boolean colorKeyOn = false;

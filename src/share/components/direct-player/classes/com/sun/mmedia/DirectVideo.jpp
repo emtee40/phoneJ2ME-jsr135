@@ -86,6 +86,14 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
     private MMHelper mmh = null;
     // Lock
     private Object boundLock = new Object();
+    private Object repaintSync = new Object();
+
+    // is the player camera?
+    private boolean isCamera = false;
+    
+    // need to wait for paint before taking snapshot
+    private boolean waitingForPaint = false;
+
     
     /** 
      * Refers to current display mode: normal or full screen, provides location 
@@ -112,6 +120,11 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
         else dw = sw;
         if (sh <= 0) dh = DEFAULT_HEIGHT;
         else dh = sh;
+        
+        if (src instanceof DirectPlayer) {
+            DirectPlayer dp = (DirectPlayer)src;
+            isCamera = dp.getOwner().isCapturePlayer();
+        }
     }
     
     /**
@@ -203,6 +216,31 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
         started = false;
     }
     
+    boolean waitForPaint() {
+        if (isCamera && waitingForPaint) {
+            repaint();
+            synchronized (repaintSync) {
+                try {
+                    repaintSync.wait(3000); 
+                } catch (InterruptedException ignored) {}
+                if (waitingForPaint) {
+                    System.out.println("waitForPaint - paint wasn't occured");
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    
+    void notifySizeChanged() {
+        if (source instanceof DirectPlayer) {
+            DirectPlayer p = (DirectPlayer) source;
+            int hNative = p.getOwner().getNativeHandle();
+            sw = p.nGetWidth(hNative);
+            sh = p.nGetHeight(hNative);
+        }
+    }
+    
     /**
      * Init display mode
      */
@@ -266,6 +304,7 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
             ret = (Object)item;
 // #endif ]
             visible = true;
+            waitingForPaint = true;
         }
 
         return ret;
@@ -352,14 +391,22 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
      * return source video width
      */
     public int getSourceWidth() {
-        return sw;
+        if (sw > 0) {
+            return sw;
+        } else {
+            return DEFAULT_WIDTH;
+        }
     }
     
     /**
      * return source video height
      */
     public int getSourceHeight() {
-        return sh;
+        if (sh > 0) {
+            return sh;
+        } else {
+            return DEFAULT_HEIGHT;
+        }
     }
 
     /**
@@ -375,8 +422,14 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
         }
 
         if (visible == false) {
-            source.setVideoVisible( false);
+            source.setVideoVisible(visible);
+        } else {
+            waitingForPaint = true;
         }
+    }
+    
+    boolean getVisible() {
+        return visible;
     }
 
     /** 
@@ -412,7 +465,10 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
     public byte[] getSnapshot( String imageType ) throws MediaException
     {
         checkState();
-
+        if (!isCamera) {
+            // Only camera supports taking snapshots in this project
+            throw new MediaException("Not supported for this player");
+        }
         if (null == imageType)
         {
             imageType = System.getProperty("video.snapshot.encodings");
@@ -485,6 +541,12 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
                 prepareVideoSurface(g, x, y, w, h);
             }
         }
+        if (isCamera) {
+            synchronized (repaintSync) {
+                waitingForPaint = false;
+                repaintSync.notifyAll();
+            }
+        }
     }
 
     /**
@@ -532,6 +594,7 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
         }
         
         public void paint(Graphics g, int w, int h) {
+
             if (Logging.REPORT_LEVEL <= Logging.INFORMATION) {
                 Logging.report(Logging.INFORMATION, LogChannels.LC_MMAPI, 
                     "DVItem.paint visible=" + visible); 
@@ -542,6 +605,12 @@ class DirectVideo implements VideoControl, MIDPVideoPainter {
                     prepareClippedPreview(g, 0, 0, w, h);
                 } else {
                     prepareVideoSurface(g, 0, 0, w, h);
+                }
+            }
+            if (isCamera) {
+                synchronized (repaintSync) {
+                    waitingForPaint = false;
+                    repaintSync.notifyAll();
                 }
             }
         }

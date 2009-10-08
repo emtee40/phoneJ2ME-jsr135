@@ -27,8 +27,18 @@
 
 #include "javacall_defs.h"
 
-void LockAudioMutex();
+#if 0
+void DoLockAudioMutex();
 void UnlockAudioMutex();
+
+#define LockAudioMutex() \
+   CVMD_gcSafeExec(_ee, { \
+       DoLockAudioMutex(); \
+   })
+#else
+#define LockAudioMutex()
+#define UnlockAudioMutex()
+#endif
 
 typedef enum AsyncEventType_enum {
     ASYNC_EVENT_MMAPI = 0,

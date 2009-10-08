@@ -61,8 +61,13 @@ public class DefaultConfiguration extends Configuration {
                                                                  // #ifdef USE_FILE_CONNECTION [
                                                                  "file",
                                                                  // #endif ]
+                                                                 // #ifdef USE_RTSP [
+                                                                 "rtsp",
+                                                                 // #endif ]
                                                                  "http",
-                                                                 "https"
+                                                                 "cdma-http",
+                                                                 "https",
+                                                                 "cdma-https"
                                                                };
 
     private static boolean isJavaProtocol(String protocol) {
@@ -87,7 +92,7 @@ public class DefaultConfiguration extends Configuration {
         return false;
     }
 
-    private final static String[] RTP_PROTOCOLS = new String[] { "rtp", "rtsp" };
+    private final static String[] RTP_PROTOCOLS = new String[] { "rtp", "rtsp", "cdma-rtsp" };
 
     private static boolean isRtpProtocol(String protocol) {
         for (int i = 0; i < RTP_PROTOCOLS.length; i++) {
@@ -111,6 +116,7 @@ public class DefaultConfiguration extends Configuration {
     };
 
     private static boolean isRtpContent(String mime) {
+        // #ifdef USE_RTSP
         String uMime = mime.toUpperCase();
         for (int i = 0; i < RTP_CONTENT_TYPES.length; i++) {
             String uRtpType = RTP_CONTENT_TYPES[i].toUpperCase();
@@ -118,6 +124,7 @@ public class DefaultConfiguration extends Configuration {
                 return true;
             }
         }
+        // #endif
         return false;
     }
 
@@ -137,7 +144,9 @@ public class DefaultConfiguration extends Configuration {
 
         // Protocol handlers.
         protocolHandlers.put("http", "com.sun.mmedia.protocol.CommonDS");
+        protocolHandlers.put("cdma-http", "com.sun.mmedia.protocol.CommonDS");
         protocolHandlers.put("https", "com.sun.mmedia.protocol.CommonDS");
+        protocolHandlers.put("cdma-https", "com.sun.mmedia.protocol.CommonDS");
 
         // #ifdef USE_FILE_CONNECTION [
         protocolHandlers.put("file", "com.sun.mmedia.protocol.CommonDS");
@@ -148,6 +157,7 @@ public class DefaultConfiguration extends Configuration {
         // protocolHandlers.put( "rtp", "com.sun.mmedia.protocol.CommonDS" );
         // #else ] [
         protocolHandlers.put("rtsp", "com.sun.mmedia.protocol.CommonDS");
+        protocolHandlers.put("cdma-rtsp", "com.sun.mmedia.protocol.CommonDS");
         protocolHandlers.put("rtp", "com.sun.mmedia.protocol.CommonDS");
         // #endif ]
 
@@ -289,6 +299,13 @@ public class DefaultConfiguration extends Configuration {
                 }
             }
             nListProtocolsClose(hList);
+        }
+
+        for (int i = protocols.size()-1; i>=0; i--) {
+            String str = (String)protocols.get(i);
+            if (str.length() > 5 && str.substring(0,5).equals("cdma-")) {
+                protocols.remove(i);
+            } 
         }
 
         String[] ret = new String[protocols.size()];
