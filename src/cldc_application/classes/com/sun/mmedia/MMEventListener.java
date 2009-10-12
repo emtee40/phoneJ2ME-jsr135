@@ -35,21 +35,29 @@ class MMEventListener implements EventListener {
     /**
      *  the following constants must be consistent 
      *  with javacall_media_notification_type enum values
-     *  JAVACALL_EVENT_MEDIA_***, defined in javacall_multimedia.h
+     *  JAVACALL_EVENT_MEDIA_***, defined in javanotify_multimedia.h
      */
-    private static final int EVENT_MEDIA_END_OF_MEDIA       =  1;
-    private static final int EVENT_MEDIA_DURATION_UPDATED	=  2;
-    private static final int EVENT_MEDIA_RECORD_SIZE_LIMIT	=  3;
-    private static final int EVENT_MEDIA_RECORD_ERROR		=  4;
-    private static final int EVENT_MEDIA_DEVICE_AVAILABLE	=  5;
-    private static final int EVENT_MEDIA_DEVICE_UNAVAILABLE	=  6;
-    private static final int EVENT_MEDIA_NEED_MORE_MEDIA_DATA =  7;
-    private static final int EVENT_MEDIA_BUFFERING_STARTED	=  8;
-    private static final int EVENT_MEDIA_BUFFERING_STOPPED	=  9;
-    private static final int EVENT_MEDIA_VOLUME_CHANGED		= 10;
-    private static final int EVENT_MEDIA_SNAPSHOT_FINISHED	= 11;
-    private static final int EVENT_MEDIA_ERROR				= 12;
-    private static final int EVENT_MEDIA_SYSTEM_VOLUME_CHANGED		= 13;
+    private static final int EVENT_MEDIA_CREATE_FINISHED         =  1;
+    private static final int EVENT_MEDIA_DESTROY_FINISHED        =  2;
+    private static final int EVENT_MEDIA_PREFETCH_FINISHED       =  3;
+    private static final int EVENT_MEDIA_RUN_FINISHED            =  4;
+    private static final int EVENT_MEDIA_PAUSE_FINISHED          =  5;
+    private static final int EVENT_MEDIA_DEALLOCATE_FINISHED     =  6;
+    private static final int EVENT_MEDIA_SET_MEDIA_TIME_FINISHED =  7;
+    private static final int EVENT_MEDIA_DATA_REQUEST            =  8;
+    private static final int EVENT_MEDIA_LENGTH_REQUEST          =  9;
+    private static final int EVENT_MEDIA_DEVICE_AVAILABLE        = 10;
+    private static final int EVENT_MEDIA_DEVICE_UNAVAILABLE      = 11;
+    private static final int EVENT_MEDIA_ERROR                   = 12;
+    private static final int EVENT_MEDIA_END_OF_MEDIA            = 13;
+    private static final int EVENT_MEDIA_DURATION_UPDATED        = 14;
+    private static final int EVENT_MEDIA_BUFFERING_STARTED       = 15;
+    private static final int EVENT_MEDIA_BUFFERING_STOPPED       = 16;
+    private static final int EVENT_MEDIA_RECORD_ERROR            = 17;
+    private static final int EVENT_MEDIA_RECORD_SIZE_LIMIT       = 18;
+    private static final int EVENT_MEDIA_VOLUME_CHANGED          = 19;
+    private static final int EVENT_MEDIA_SYSTEM_VOLUME_CHANGED   = 20;
+    private static final int EVENT_MEDIA_SNAPSHOT_FINISHED       = 21;
 
     MMEventListener() {
         MMEventHandler.setListener(this);
@@ -67,40 +75,14 @@ class MMEventListener implements EventListener {
      */
     public void process(Event event) {
         NativeEvent nevt = (NativeEvent)event;
-        HighLevelPlayer p;
+        HighLevelPlayer p = null;
 
-		if( EventTypes.MMAPI_EVENT != nevt.getType() ) return;
-		
-        switch ( nevt.intParam4 ) {
-        case EVENT_MEDIA_END_OF_MEDIA:
-            p = HighLevelPlayer.get(nevt.intParam1);
-            if (p != null) {
-                p.sendEvent(PlayerListener.END_OF_MEDIA, new Long(nevt.intParam2 * 1000));
-            }
-            break;
-
-        case EVENT_MEDIA_DURATION_UPDATED:
-            p = HighLevelPlayer.get(nevt.intParam1);
-            if (p != null) {
-                p.sendEvent(PlayerListener.DURATION_UPDATED, new Long(nevt.intParam2 * 1000));
-            }
-            break;
-
-        case EVENT_MEDIA_VOLUME_CHANGED:
-            p = HighLevelPlayer.get(nevt.intParam1);
-            if (p != null) {
-                if (nevt.intParam2 < 0) {
-                    nevt.intParam2 = 0;
-                }
-                if (nevt.intParam2 > 100) {
-                    nevt.intParam2 = 100;
-                }
-                p.sendEvent(PlayerListener.VOLUME_CHANGED, new Long(nevt.intParam2));
-            }
-            break;
+        if( EventTypes.MMAPI_EVENT != nevt.getType() ) {
+            return;
+        }
 
         // System volume event handler - Send to the all players in this isolate
-        case EVENT_MEDIA_SYSTEM_VOLUME_CHANGED:
+        if( EVENT_MEDIA_SYSTEM_VOLUME_CHANGED == nevt.intParam4 ) {
             if (nevt.intParam2 < 0) {
                 nevt.intParam2 = 0;
             }
@@ -108,58 +90,83 @@ class MMEventListener implements EventListener {
                 nevt.intParam2 = 100;
             }
             HighLevelPlayer.sendSystemVolumeChanged(nevt.intParam2);
-            break;
-
-        case EVENT_MEDIA_RECORD_SIZE_LIMIT:
+        } else { // event addressed to an individual Player
             p = HighLevelPlayer.get(nevt.intParam1);
-            if(p != null) {
+            if (p != null) {
+                processPlayerEvent( nevt, p );
+            }
+        }
+    }
+
+    private void processPlayerEvent( NativeEvent nevt, HighLevelPlayer p )
+    {
+        if( null == p ) {
+            return;
+        }
+        switch (nevt.intParam4) {
+            case EVENT_MEDIA_END_OF_MEDIA:
+                p.sendEvent(PlayerListener.END_OF_MEDIA, new Long(nevt.intParam2 * 1000));
+                break;
+
+            case EVENT_MEDIA_DURATION_UPDATED:
+                p.sendEvent(PlayerListener.DURATION_UPDATED, new Long(nevt.intParam2 * 1000));
+                break;
+
+            case EVENT_MEDIA_VOLUME_CHANGED:
+                if (nevt.intParam2 < 0) {
+                    nevt.intParam2 = 0;
+                }
+                if (nevt.intParam2 > 100) {
+                    nevt.intParam2 = 100;
+                }
+                p.sendEvent(PlayerListener.VOLUME_CHANGED, new Long(nevt.intParam2));
+                break;
+
+            case EVENT_MEDIA_RECORD_SIZE_LIMIT:
                 p.receiveRSL();
-			}	
-            break;
-        
-        case EVENT_MEDIA_RECORD_ERROR:
-            p = HighLevelPlayer.get(nevt.intParam1);
-            if (p != null) {
+                break;
+
+            case EVENT_MEDIA_RECORD_ERROR:
                 p.sendEvent(PlayerListener.RECORD_ERROR, new String("Unexpected Record Error"));
-            }
-            break;
+                break;
 
-        case EVENT_MEDIA_BUFFERING_STARTED:
-            p = HighLevelPlayer.get(nevt.intParam1);
-            if (p != null) {
+            case EVENT_MEDIA_BUFFERING_STARTED:
                 p.sendEvent(PlayerListener.BUFFERING_STARTED, new Long(nevt.intParam2 * 1000));
-            }
-            break;
-        
-        case EVENT_MEDIA_BUFFERING_STOPPED:
-            p = HighLevelPlayer.get(nevt.intParam1);
-            if (p != null) {
+                break;
+
+            case EVENT_MEDIA_BUFFERING_STOPPED:
                 p.sendEvent(PlayerListener.BUFFERING_STOPPED, new Long(nevt.intParam2 * 1000));
-            }
-            break;
+                break;
 
-        case EVENT_MEDIA_ERROR:
-            p = HighLevelPlayer.get(nevt.intParam1);
-            if (p != null) {
+            case EVENT_MEDIA_ERROR:
                 p.sendEvent(PlayerListener.ERROR, new String("Unexpected Media Error"));
-            }
-            break;
+                break;
 
-        case EVENT_MEDIA_NEED_MORE_MEDIA_DATA:
-            p = HighLevelPlayer.get(nevt.intParam1);
-            if (p != null) {
+            case EVENT_MEDIA_DATA_REQUEST:
                 p.continueDownload();
-            }
-            break;
+                break;
 
-        case EVENT_MEDIA_SNAPSHOT_FINISHED:
-            p = HighLevelPlayer.get( nevt.intParam1 );
-            if( null != p )
-            {
+            case EVENT_MEDIA_LENGTH_REQUEST:
+                p.doOnStreamLengthRequest();
+                break;
+
+            case EVENT_MEDIA_SET_MEDIA_TIME_FINISHED:
+            case EVENT_MEDIA_CREATE_FINISHED:
+            case EVENT_MEDIA_PREFETCH_FINISHED:
+            case EVENT_MEDIA_RUN_FINISHED:
+            case EVENT_MEDIA_PAUSE_FINISHED:
+            case EVENT_MEDIA_DEALLOCATE_FINISHED:
+            case EVENT_MEDIA_DESTROY_FINISHED:
+                AsyncExecutor ae = null;
+                ae = p.getAsyncExecutor();
+                if (null != ae) {
+                    ae.unblockOnEvent(nevt.intParam5, nevt.intParam2);
+                }
+                break;
+
+            case EVENT_MEDIA_SNAPSHOT_FINISHED:
                 p.notifySnapshotFinished();
-            }
-            break;
-                
+                break;
         }
     }
 }
